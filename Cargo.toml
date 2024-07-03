@@ -1,0 +1,12 @@
+[package]
+name = "thermal-model"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+approx = "0.5.1"
+eframe = "0.27.2"
+egui_plot = "0.27.2"
+num = "0.4.3"
+ordered-float = "4.2.1"
+rand = "0.8.5"
