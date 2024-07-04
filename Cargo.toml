@@ -2,11 +2,21 @@
 name = "thermal-model"
 version = "0.1.0"
 edition = "2021"
+author = "MqCreaple"
+repository = "https://github.com/MqCreaple/thermal-model"
 
 [dependencies]
 approx = "0.5.1"
-eframe = "0.27.2"
-egui_plot = "0.27.2"
+eframe = { version = "0.28.0", features = [
+    "glow"
+] }
+egui_plot = "0.28.0"
 num = "0.4.3"
 ordered-float = "4.2.1"
 rand = "0.8.5"
+getrandom = { version = "0.2.3", features = ["js"] }
+log = "0.4.22"
+chrono = "0.4.38"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"

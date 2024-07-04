@@ -1,6 +1,6 @@
-# Thermal Model
+# Ideal Gas Model
 
-A simple simulation of thermal behaviors of gas molecules.
+A simple simulation of thermal behaviors of ideal gas molecules.
 
 This model simulates collisions between large number of small spheres (each representing a gas molecule). This model aims to prove the Maxwell distribution of molecule speed.
 
