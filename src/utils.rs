@@ -1,20 +1,21 @@
 use eframe::egui::{Vec2, Color32};
+use ordered_float::NotNan;
 
-use crate::model::Molecule;
+use crate::model::{Molecule, MoleculeType};
 
-pub fn collision_2_molecules(mol1: &mut Molecule, mol2: &mut Molecule) {
+pub fn collision_2_molecules<T: MoleculeType>(mol1: &mut Molecule<T>, mol2: &mut Molecule<T>) {
     // calculate velocities after collision
     let normal = (mol2.pos - mol1.pos).normalized();
-    let m1 = mol1.mass;
-    let m2 = mol2.mass;
+    let m1 = mol1.mol_type.mass();
+    let m2 = mol2.mol_type.mass();
     let v1 = mol1.vel.dot(normal);
     let v2 = mol2.vel.dot(normal);
     let v1_final = 2.0 * m2 * (v2 - v1) / (m1 + m2) * normal + mol1.vel;
     let v2_final = 2.0 * m1 * (v1 - v2) / (m1 + m2) * normal + mol2.vel;
     // update the two molecules' positions and velocities
-    let update_dist = (mol1.radius + mol2.radius - Vec2::length(mol1.pos - mol2.pos)) / 2.0;
     mol1.vel = v1_final;
     mol2.vel = v2_final;
+    let update_dist = (mol1.mol_type.radius() + mol2.mol_type.radius() - Vec2::length(mol1.pos - mol2.pos)) / 2.0;
     mol1.pos -= normal * update_dist;
     mol2.pos += normal * update_dist;
 }

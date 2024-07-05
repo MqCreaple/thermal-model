@@ -17,6 +17,7 @@ rand = "0.8.5"
 getrandom = { version = "0.2.3", features = ["js"] }
 log = "0.4.22"
 chrono = "0.4.38"
+env_logger = "0.11.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"

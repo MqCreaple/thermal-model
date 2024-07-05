@@ -1,12 +1,13 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
-use crate::model::Model;
-use crate::utils::color_interp;
+use crate::model::{Model, MoleculeType};
+use crate::model::Molecule;
 use chrono::{DateTime, Utc};
 use eframe::{self, CreationContext};
 use eframe::egui::{self, CentralPanel, Color32, Grid, Label, Mesh, Painter, Pos2, Rect, SidePanel, Stroke, TopBottomPanel, Ui, Vec2};
 use egui_plot::{Bar, BarChart, Plot};
+use ordered_float::NotNan;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlotOptions {
@@ -15,30 +16,21 @@ pub enum PlotOptions {
 }
 
 /// Customizable options for the visualizer
-pub struct VisualizerOptions {
-    pub enable_plot_v_magnitude: bool,
+pub struct VisualizerOptions<M: Model> {
     pub plot_options: PlotOptions,  // the threshold of the number of molecules to switch between painting all molecules and painting a grid
-    pub enable_plot_v_x: bool,
-    pub enable_plot_v_y: bool,
-    pub display_max_velocity: f32,
+    pub plot_quantities: Vec<(fn(Molecule<M::Type>) -> f32, &'static str)>,  // the quantities to plot and their names
 }
-
-// constants of visualizer
-const COLOR_HOT: egui::Color32 = egui::Color32::from_rgb(228, 47, 47);
-const COLOR_COLD: egui::Color32 = egui::Color32::from_rgb(43, 110, 197);
-// const COLOR_HOT: egui::Color32 = egui::Color32::from_rgb(0, 0, 0);
-// const COLOR_COLD: egui::Color32 = egui::Color32::from_rgb(255, 255, 255);
 
 pub struct Visualizer<M: Model> {
     model: M,
     speed_ratio: f32,   // the ratio of the speed of the model to the actual speed
     bar_cnt: usize,     // number of bars in the summary histogram
     last_frame: DateTime<Utc>,
-    options: VisualizerOptions,
+    options: VisualizerOptions<M>,
 }
 
 impl<M: Model> Visualizer<M> {
-    pub fn new(model: M, speed_ratio: f32, bar_cnt: usize, options: VisualizerOptions, cc: &CreationContext<'_>) -> Self {
+    pub fn new(model: M, speed_ratio: f32, bar_cnt: usize, options: VisualizerOptions<M>, cc: &CreationContext<'_>) -> Self {
         Self { model, speed_ratio, last_frame: Utc::now(), bar_cnt, options }
     }
 }
@@ -73,7 +65,7 @@ where
         let now = Utc::now();
         let time_diff = now - self.last_frame;
         let time_diff = time_diff.num_seconds() as f32 + time_diff.subsec_nanos() as f32 / 1_000_000_000.0;
-        let _ret = self.model.advance(time_diff * self.speed_ratio);
+        let ret = self.model.advance(time_diff * self.speed_ratio);
         self.last_frame = now;
         // paint
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -97,10 +89,8 @@ where
                         molecules.for_each(|m| {
                             let pos = m.pos * min_pixels_per_point;
                             let pos = Pos2::new(pos.x, pos.y);
-                            let radius = m.radius * min_pixels_per_point;
-                            let velocity=  m.vel.length();
-                            let velocity_ratio = 1.0f32.min(velocity / self.options.display_max_velocity);
-                            painter.circle(pos, radius, color_interp(COLOR_COLD, COLOR_HOT, velocity_ratio), egui::Stroke::default());
+                            let radius = m.mol_type.radius() * min_pixels_per_point;
+                            painter.circle(pos, radius, m.mol_type.color(m.pos, m.vel), egui::Stroke::default());
                         });
                         // paint the boundary
                         painter.rect(
@@ -158,6 +148,8 @@ where
                 ui.vertical(|ui| {
                     // show graphics info
                     ui.add(Label::new(format!("FPS: {}", (1.0 / time_diff) as i32)));
+                    ui.add(Label::new(format!("Number of molecules: {}", self.model.num_molecule())));
+                    ui.add(Label::new(format!("Last number of unchecked collisions: {:?}", ret)));
                     // show control widgets
                     let mut plot_all_molecules = self.options.plot_options == PlotOptions::All;
                     let (mut grid_x_count, mut grid_y_count) = match self.options.plot_options {
@@ -183,24 +175,13 @@ where
                         graph_grid = graph_grid.min_row_height(ui.available_height());
                     }
                     graph_grid.show(ui, |ui| {
-                        // plot the histogram of the velocity magnitudes
-                        if self.options.enable_plot_v_magnitude {
-                            let velocities = self.model.get_molecules().map(|m| m.vel.length()).collect::<Vec<_>>();
-                            plot_bar(ui, &velocities, self.bar_cnt, "Velocity Histogram", "velocity (magnitude)", "count");
+                        for quantity in self.options.plot_quantities.iter() {
+                            let (f, id) = quantity;
+                            // NaN data represents absense. Filter out NaN data before plotting.
+                            let data = self.model.get_molecules().map(f).filter(|data| !data.is_nan()).collect::<Vec<f32>>();
+                            plot_bar(ui, &data, self.bar_cnt, id, id, "count");
+                            if use_horizontal_layout { ui.end_row(); }
                         }
-                        if use_horizontal_layout { ui.end_row(); }
-                        // plot the histogram of x components of the velocities
-                        if self.options.enable_plot_v_x {
-                            let x_velocities = self.model.get_molecules().map(|m| m.vel.x).collect::<Vec<_>>();
-                            plot_bar(ui, &x_velocities, self.bar_cnt, "X Velocity Histogram", "velocity (x)", "count");
-                        }
-                        if use_horizontal_layout { ui.end_row(); }
-                        // plot the histogram of y components of the velocities
-                        if self.options.enable_plot_v_y {
-                            let y_velocities = self.model.get_molecules().map(|m| m.vel.y).collect::<Vec<_>>();
-                            plot_bar(ui, &y_velocities, self.bar_cnt, "Y Velocity Histogram", "velocity (y)", "count");
-                        }
-                        if use_horizontal_layout { ui.end_row(); }
                     });
                 });
             });

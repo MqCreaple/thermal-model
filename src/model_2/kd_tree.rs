@@ -3,7 +3,7 @@ use std::{ops::Range, slice::from_raw_parts_mut};
 use eframe::egui::Vec2;
 use ordered_float::NotNan;
 
-use crate::model::Molecule;
+use crate::model::{Molecule, MoleculeType};
 
 /// The trait of all objects that has a position (represented by a 2D vector)
 /// 
@@ -18,7 +18,7 @@ impl PositionKey for Vec2 {
     }
 }
 
-impl PositionKey for Molecule {
+impl<T: MoleculeType> PositionKey for Molecule<T> {
     fn get_position(&self) -> Vec2 {
         self.pos
     }
@@ -108,36 +108,50 @@ impl<'a, E: PositionKey + Clone> Node<'a, E> {
 
     /// Find all points in the KD tree that are within a given circle
     pub fn query_circle(&self, center: Vec2, radius: f32) -> Vec<&E> {
-        let mut result = Vec::new();
         if self.x_bound.start > center.x + radius || self.x_bound.end < center.x - radius ||
             self.y_bound.start > center.y + radius || self.y_bound.end < center.y - radius {
-            return result;
+            return Vec::new();
         }
         match &self.inner {
             NodeInner::Leaf(elems) => {
-                for elem in *elems {
+                elems.iter().filter_map(|elem| {
                     if Vec2::length(elem.get_position() - center) <= radius {
-                        result.push(elem);
+                        Some(elem)
+                    } else {
+                        None
                     }
-                }
+                }).collect()
             },
             NodeInner::XNode { x_div, left, right } => {
-                if center.x - radius < *x_div {
-                    result.extend(left.query_circle(center, radius));
-                }
-                if center.x + radius > *x_div {
+                let overlap_left = center.x - radius < *x_div;
+                let overlap_right = center.x + radius > *x_div;
+                if overlap_left && overlap_right {
+                    let mut result = left.query_circle(center, radius);
                     result.extend(right.query_circle(center, radius));
+                    result
+                } else if overlap_left {
+                    left.query_circle(center, radius)
+                } else if overlap_right {
+                    right.query_circle(center, radius)
+                } else {
+                    Vec::new()
                 }
             },
             NodeInner::YNode { y_div, up, down } => {
-                if center.y - radius < *y_div {
-                    result.extend(up.query_circle(center, radius));
-                }
-                if center.y + radius > *y_div {
+                let overlap_up = center.y - radius < *y_div;
+                let overlap_down = center.y + radius > *y_div;
+                if overlap_up && overlap_down {
+                    let mut result = up.query_circle(center, radius);
                     result.extend(down.query_circle(center, radius));
+                    result
+                } else if overlap_up {
+                    up.query_circle(center, radius)
+                } else if overlap_down {
+                    down.query_circle(center, radius)
+                } else {
+                    Vec::new()
                 }
             },
         }
-        result
     }
 }

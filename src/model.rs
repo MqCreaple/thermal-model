@@ -1,16 +1,24 @@
-use eframe::egui::Vec2;
+use eframe::egui::{Color32, Vec2};
+
+pub trait MoleculeType: Clone + Copy {
+    fn mass(&self) -> f32;
+    fn radius(&self) -> f32;
+    fn color(&self, pos: Vec2, vel: Vec2) -> Color32;
+}
 
 #[derive(Clone, Copy, Default, Debug)]
-pub struct Molecule {
+pub struct Molecule<T: MoleculeType> {
     pub pos: Vec2,
     pub vel: Vec2,
-    pub radius: f32,
-    pub mass: f32,
+    pub mol_type: T,
 }
 
 /// The abstract trait of models of gases in a perfect rectangular container.
 pub trait Model {
+    type Type: MoleculeType;
     type AdvanceReturnType;
+    /// Create a new model with the given dimension and number of gas molecules.
+    fn construct(width: f32, height: f32, num_molecule: usize, constructor: impl FnMut(usize) -> Molecule<Self::Type>) -> Self;
     /// The dimension (width, height) of the container
     fn dimension(&self) -> (f32, f32);
     /// Get the number of gas molecules in the container
@@ -18,5 +26,5 @@ pub trait Model {
     /// Advance the system by time dt (in seconds).
     fn advance(&mut self, dt: f32) -> Self::AdvanceReturnType;
     /// Get the summaries all molecules
-    fn get_molecules(&self) -> impl Iterator<Item = Molecule>;
+    fn get_molecules(&self) -> impl Iterator<Item = Molecule<Self::Type>>;
 }
