@@ -1,5 +1,4 @@
-use eframe::egui::{Vec2, Color32};
-use ordered_float::NotNan;
+use eframe::egui::{Color32, Vec2};
 
 use crate::model::{Molecule, MoleculeType};
 

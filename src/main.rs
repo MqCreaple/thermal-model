@@ -59,14 +59,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    let model = model_2::Model2::<MoleculeType1>::new(12.0, 12.0, 15000, 10);
+    let model = model_2::Model2::<MoleculeType1>::new(120.0, 120.0, 15000, 10);
     // to change the effect of the visualizer, modify the options here
     let visualizer_options = visualizer::VisualizerOptions {
-        enable_plot_v_magnitude: true,
-        enable_plot_v_x: true,
-        enable_plot_v_y: true,
+        plot_quantities: vec![
+            (|m| m.vel.length(), "velocity magnitude"),
+            (|m| m.vel.x, "velocity x"),
+            (|m| m.vel.y, "velocity y"),
+        ],
         plot_options: PlotOptions::Grid(50, 50),
-        display_max_velocity: 1.414,
     };
 
     eframe::WebLogger::init(log::LevelFilter::Warn).unwrap();

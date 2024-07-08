@@ -84,3 +84,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     Ok(())
 }
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    let mut rng = rand::thread_rng();
+    let o2_mol_count = (NUM_MOLS as f32 * MoleculeTypes::O2.mass() / (MoleculeTypes::O2.mass() + MoleculeTypes::CO2.mass())) as usize;
+    let model = Model2::<MoleculeTypes>::construct(WIDTH, HEIGHT, NUM_MOLS, |i| {
+        if i < o2_mol_count {
+            Molecule {
+                pos: Vec2::new(rng.gen_range(0.0..WIDTH), rng.gen_range(0.0..HEIGHT)),
+                vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
+                mol_type: MoleculeTypes::O2,
+            }
+        } else {
+            Molecule {
+                pos: Vec2::new(rng.gen_range(0.0..WIDTH), rng.gen_range(0.0..HEIGHT)),
+                vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
+                mol_type: MoleculeTypes::CO2,
+            }
+        }
+    });
+    eframe::WebLogger::init(log::LevelFilter::Warn).unwrap();
+    let web_option = eframe::WebOptions::default();
+    wasm_bindgen_futures::spawn_local(async move {
+        eframe::WebRunner::new().start(
+            "gas molecule visualizer",
+            web_option,
+            Box::new(|cc| Ok(Box::new(
+                Visualizer::new(model, 0.25, 20, VisualizerOptions {
+                    plot_quantities: vec![
+                        (|m| match m.mol_type {
+                            MoleculeTypes::O2 => 0.5 * m.mol_type.mass() * m.vel.length_sq(),
+                            MoleculeTypes::CO2 => f32::NAN,
+                        }, "O2 kinetic energy"),
+                        (|m| match m.mol_type {
+                                MoleculeTypes::CO2 => 0.5 * m.mol_type.mass() * m.vel.length_sq(),
+                                MoleculeTypes::O2 => f32::NAN,
+                        }, "CO2 kinetic energy"),
+                    ],
+                    plot_options: PlotOptions::Grid(50, 50),
+                }, &cc)
+            ))),
+        )
+        .await
+        .expect("Failed to run web app")
+    });
+}

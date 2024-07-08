@@ -24,7 +24,6 @@ pub struct Model2<T: MoleculeType> {
 struct IndexedMolecule {
     index: usize,
     pos: Vec2,
-    radius: f32,
 }
 
 impl kd_tree::PositionKey for IndexedMolecule {
@@ -75,14 +74,14 @@ impl<T: MoleculeType> Model2<T> {
         // build a KD tree of all molecules
         let mut indexed_molecule = self.molecules.iter()
             .enumerate()
-            .map(|(i, m)| IndexedMolecule { index: i, pos: m.pos, radius: m.mol_type.radius() })
+            .map(|(i, m)| IndexedMolecule { index: i, pos: m.pos })
             .collect::<Vec<_>>();
         let kd_tree = kd_tree::Node::new(&mut indexed_molecule, self.kd_tree_max_elem, kd_tree::KDNodeDivideBy::X);
         // handle collisions between molecules
         let num_molecules = self.molecules.len();
         for i in 0..num_molecules {
             let mol1 = self.molecules[i];
-            let neighbors = kd_tree.query_circle(mol1.pos, mol1.mol_type.radius() * 2.0);
+            let neighbors = kd_tree.query_circle(mol1.pos, mol1.mol_type.radius() * 2.0).unwrap_or(Vec::new());
             for indexed_mol2 in neighbors {
                 let j = indexed_mol2.index;
                 let mol2 = &self.molecules[indexed_mol2.index];

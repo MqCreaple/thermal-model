@@ -107,49 +107,49 @@ impl<'a, E: PositionKey + Clone> Node<'a, E> {
     }
 
     /// Find all points in the KD tree that are within a given circle
-    pub fn query_circle(&self, center: Vec2, radius: f32) -> Vec<&E> {
+    pub fn query_circle(&self, center: Vec2, radius: f32) -> Option<Vec<&E>> {
         if self.x_bound.start > center.x + radius || self.x_bound.end < center.x - radius ||
             self.y_bound.start > center.y + radius || self.y_bound.end < center.y - radius {
-            return Vec::new();
+            return None;
         }
         match &self.inner {
             NodeInner::Leaf(elems) => {
-                elems.iter().filter_map(|elem| {
+                Some(elems.iter().filter_map(|elem| {
                     if Vec2::length(elem.get_position() - center) <= radius {
                         Some(elem)
                     } else {
                         None
                     }
-                }).collect()
+                }).collect())
             },
             NodeInner::XNode { x_div, left, right } => {
                 let overlap_left = center.x - radius < *x_div;
                 let overlap_right = center.x + radius > *x_div;
                 if overlap_left && overlap_right {
-                    let mut result = left.query_circle(center, radius);
-                    result.extend(right.query_circle(center, radius));
-                    result
+                    let mut result = left.query_circle(center, radius)?;
+                    result.extend(right.query_circle(center, radius)?);
+                    Some(result)
                 } else if overlap_left {
                     left.query_circle(center, radius)
                 } else if overlap_right {
                     right.query_circle(center, radius)
                 } else {
-                    Vec::new()
+                    None
                 }
             },
             NodeInner::YNode { y_div, up, down } => {
                 let overlap_up = center.y - radius < *y_div;
                 let overlap_down = center.y + radius > *y_div;
                 if overlap_up && overlap_down {
-                    let mut result = up.query_circle(center, radius);
-                    result.extend(down.query_circle(center, radius));
-                    result
+                    let mut result = up.query_circle(center, radius)?;
+                    result.extend(down.query_circle(center, radius)?);
+                    Some(result)
                 } else if overlap_up {
                     up.query_circle(center, radius)
                 } else if overlap_down {
                     down.query_circle(center, radius)
                 } else {
-                    Vec::new()
+                    None
                 }
             },
         }

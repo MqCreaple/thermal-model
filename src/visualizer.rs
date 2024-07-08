@@ -45,7 +45,7 @@ fn plot_bar<'a>(ui: &mut Ui, data: &[f32], bar_cnt: usize, id: &'static str, x_l
         bins[bin] += 1;
     });
     let bars = bins.iter().enumerate().map(|(i, cnt)|
-        Bar::new((i as f64 + 0.5) * bin_width as f64, *cnt as f64)
+        Bar::new(min_v as f64 + (i as f64 + 0.5) * bin_width as f64, *cnt as f64)
     ).collect();
     let bar_chart = BarChart::new(bars).width(bin_width as f64);
     Plot::new(id)
