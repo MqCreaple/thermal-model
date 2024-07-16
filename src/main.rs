@@ -79,7 +79,7 @@ fn main() {
         plot_options: PlotOptions::Grid(50, 50),
     };
 
-    eframe::WebLogger::init(log::LevelFilter::Warn).unwrap();
+    eframe::WebLogger::init(log::LevelFilter::Warn).expect("Failed to initialize web logger");
     let web_option = eframe::WebOptions::default();
     wasm_bindgen_futures::spawn_local(async move {
         eframe::WebRunner::new().start(

@@ -49,7 +49,12 @@ impl ThreadSync {
     /// 
     /// If any thread panics before calling `sync()`, the counter will be set to -1.
     pub fn sync(&self) -> Result<(), ThreadSyncError> {
-        let counter = self.sync.0.load(atomic::Ordering::Acquire);
+        // TODO: The code has potential synchronization problem.
+        // 1. The counter may be set to -1 before the mutex is locked
+        // 2. The last thread might notify all before other threads start to wait for the condition
+        let mutex = Mutex::new(());
+        let guard = mutex.lock().or(Err(ThreadSyncError("Mutex Guard Poisoned")))?;
+        let counter = self.sync.0.fetch_sub(1, atomic::Ordering::AcqRel);
         if counter < 0 {
             return Err(ThreadSyncError("Another thread panics before calling sync()"));
         } else if counter == 1 {
@@ -57,11 +62,7 @@ impl ThreadSync {
             self.sync.0.store(self.initial_count, atomic::Ordering::Release);
             self.sync.1.notify_all();
         } else {
-            // subtract 1 from the counter and wait for the signal
-            self.sync.0.fetch_sub(1, atomic::Ordering::AcqRel);
-            // TODO: constructing and dropping mutex guard is time consuming
-            let mutex = Mutex::new(());
-            let guard = mutex.lock().or(Err(ThreadSyncError("Mutex Guard Poisoned")))?;
+            // wait for the signal
             let _guard = self.sync.1.wait(guard).or(Err(ThreadSyncError("Error occurred during waiting")))?;
             // _gurad is dropped here
         }
@@ -140,8 +141,8 @@ mod tests {
 
     #[test]
     fn test_sync() {
-        let sync = ThreadSync::new(3);
-        let threads = (0..3).map(|i| {
+        let sync = ThreadSync::new(10);
+        let threads = (0..10).map(|i| {
             let sync_clone = sync.clone();
             thread::spawn(move || {
                 println!("Thread {} initializes", i);
@@ -182,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_sync_panic() {
-        env_logger::builder().filter_level(log::LevelFilter::Debug).init();
+        // env_logger::builder().filter_level(log::LevelFilter::Debug).init();
         let sync = ThreadSync::new(4);
         let _guard = sync.set_panic_hook();
         let threads = (0..4).map(|i| {

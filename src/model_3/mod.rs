@@ -132,7 +132,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                         })
                         .collect::<Vec<_>>();
                     let index_set = indexed_molecules.iter().map(|m| m.index).collect::<Vec<_>>();
-                    // TODO: sometimes deadlocks happen in the code. Need to debug.
+                    // TODO URGENT: sometimes deadlocks happen in the code. Need to debug.
                     thread_sync_clone.sync().unwrap();
                     log::debug!("First sync:\t{}", thread_idx);
                     // This operation may not look safe, but since before the sync statement,
@@ -277,7 +277,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
     /// 
     /// If the pressure on the four walls differs by more than 5%, then return None.
     pub fn average_pressure(&self) -> Option<f32> {
-        let pressure_entry = self.pressures.iter().fold(PressureEntry::default(), |acc, p| acc + *p) / (N as f32);
+        let pressure_entry = self.pressures.iter().fold(PressureEntry::default(), |acc, p| acc + *p) / (self.pressures.len() as f32);
         let pressure = (pressure_entry.x_neg + pressure_entry.x_pos + pressure_entry.y_neg + pressure_entry.y_pos) / 4.0;
         if (pressure_entry.x_neg - pressure).abs() / pressure > 0.05
             || (pressure_entry.x_pos - pressure).abs() / pressure > 0.05
