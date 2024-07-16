@@ -1,11 +1,9 @@
 use std::collections::BTreeSet;
 use std::ops::{Add, Div};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 use std::{array, thread};
 
-pub mod thread_sync;
 use ordered_float::NotNan;
-use thread_sync::ThreadSync;
 
 use crate::model::{Model, Molecule, MoleculeType};
 use crate::model_2::{kd_tree, IndexedMolecule};
@@ -98,8 +96,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
         // assign each grid a thread
         #[allow(const_evaluatable_unchecked)]
         thread::scope(|s| {
-            let thread_sync = ThreadSync::new((THREAD_WIDTH * THREAD_HEIGHT) as u32);
-            let _panic_hook_guard = thread_sync.set_panic_hook();
+            let barrier = Arc::new(Barrier::new(THREAD_WIDTH * THREAD_HEIGHT));
             let num_molecules = self.molecules.len();
             let kd_tree_max_elem = self.kd_tree_max_elem;
 
@@ -110,7 +107,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
 
             for thread_idx in 0..THREAD_WIDTH * THREAD_HEIGHT {
                 let molecules = MoleculeMutPtr(self.molecules.as_mut_ptr());
-                let thread_sync_clone = thread_sync.clone();
+                let barrier_clone = barrier.clone();
                 let grid_i = thread_idx % THREAD_WIDTH;
                 let grid_j = thread_idx / THREAD_WIDTH;
                 let grid_x_range = (grid_i as f32 * self.unit_width)..((grid_i + 1) as f32 * self.unit_width);
@@ -133,7 +130,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                         .collect::<Vec<_>>();
                     let index_set = indexed_molecules.iter().map(|m| m.index).collect::<Vec<_>>();
                     // TODO URGENT: sometimes deadlocks happen in the code. Need to debug.
-                    thread_sync_clone.sync().unwrap();
+                    barrier_clone.wait();
                     log::debug!("First sync:\t{}", thread_idx);
                     // This operation may not look safe, but since before the sync statement,
                     // every thread saves a different set of indices to check collision.
@@ -186,7 +183,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                             down_bound_mols.lock().unwrap().insert(SetKey(i, NotNan::new(m.pos.x).unwrap()));
                         }
                     }
-                    thread_sync_clone.sync().unwrap();
+                    barrier_clone.wait();
                     log::debug!("Second sync:\t{}", thread_idx);
 
                     // each thread picks a boundary and process collision
@@ -279,10 +276,11 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
     pub fn average_pressure(&self) -> Option<f32> {
         let pressure_entry = self.pressures.iter().fold(PressureEntry::default(), |acc, p| acc + *p) / (self.pressures.len() as f32);
         let pressure = (pressure_entry.x_neg + pressure_entry.x_pos + pressure_entry.y_neg + pressure_entry.y_pos) / 4.0;
-        if (pressure_entry.x_neg - pressure).abs() / pressure > 0.05
-            || (pressure_entry.x_pos - pressure).abs() / pressure > 0.05
-            || (pressure_entry.y_neg - pressure).abs() / pressure > 0.05
-            || (pressure_entry.y_pos - pressure).abs() / pressure > 0.05 {
+        let threshold = pressure * 0.05;
+        if (pressure_entry.x_neg - pressure).abs() > threshold
+            || (pressure_entry.x_pos - pressure).abs() > threshold
+            || (pressure_entry.y_neg - pressure).abs() > threshold
+            || (pressure_entry.y_pos - pressure).abs() > threshold {
             None
         } else {
             Some(pressure)
@@ -290,7 +288,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
     }
 
     pub fn pressure(&self) -> PressureEntry {
-        self.pressures.iter().fold(PressureEntry::default(), |acc, p| acc + *p) / (N as f32)
+        self.pressures.iter().fold(PressureEntry::default(), |acc, p| acc + *p) / (self.pressures.len() as f32)
     }
 }
 
