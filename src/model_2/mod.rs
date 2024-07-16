@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, time::Instant};
 
 use eframe::egui::Vec2;
 use num::Zero;
@@ -20,30 +20,15 @@ pub struct Model2<T: MoleculeType> {
 }
 
 /// A molecule with its index in the molecule array
-#[derive(Clone, Copy, Debug)]
-struct IndexedMolecule {
-    index: usize,
-    pos: Vec2,
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IndexedMolecule {
+    pub index: usize,
+    pub pos: Vec2,
 }
 
 impl kd_tree::PositionKey for IndexedMolecule {
     fn get_position(&self) -> Vec2 {
         self.pos
-    }
-}
-
-#[derive(PartialEq, Eq, Debug)]
-struct CollisionEntry(usize, usize, NotNan<f32>);
-
-impl PartialOrd for CollisionEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.2.partial_cmp(&other.2)
-    }
-}
-
-impl Ord for CollisionEntry {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.2.cmp(&other.2)
     }
 }
 
@@ -76,12 +61,14 @@ impl<T: MoleculeType> Model2<T> {
             .enumerate()
             .map(|(i, m)| IndexedMolecule { index: i, pos: m.pos })
             .collect::<Vec<_>>();
+        // let c1 = Instant::now();
         let kd_tree = kd_tree::Node::new(&mut indexed_molecule, self.kd_tree_max_elem, kd_tree::KDNodeDivideBy::X);
+        // let c2 = Instant::now();
         // handle collisions between molecules
         let num_molecules = self.molecules.len();
         for i in 0..num_molecules {
             let mol1 = self.molecules[i];
-            let neighbors = kd_tree.query_circle(mol1.pos, mol1.mol_type.radius() * 2.0).unwrap_or(Vec::new());
+            let neighbors = kd_tree.query_circle(mol1.pos, T::MAX_RADIUS_BETWEEN_MOLECULES).unwrap_or(Vec::new());
             for indexed_mol2 in neighbors {
                 let j = indexed_mol2.index;
                 let mol2 = &self.molecules[indexed_mol2.index];
@@ -95,6 +82,7 @@ impl<T: MoleculeType> Model2<T> {
                 // Therefore, the collisions calculated with the KD tree might not be accurate.
             }
         }
+        // let c3 = Instant::now();
         // handle collisions with walls
         for m in self.molecules.iter_mut() {
             let radius = m.mol_type.radius();
@@ -119,7 +107,24 @@ impl<T: MoleculeType> Model2<T> {
                 total_collisions += 1;
             }
         }
+        // let c4 = Instant::now();
+        // log::debug!(
+        //     "kd tree build: {:?} μs, molecule-molecule collision: {:?} μs, molecule-wall collision: {:?} μs",
+        //     (c2 - c1).as_micros(),
+        //     (c3 - c2).as_micros(),
+        //     (c4 - c3).as_micros(),
+        // );
         total_collisions
+    }
+
+    pub fn volume(&self) -> f32 {
+        self.width * self.height
+    }
+
+    pub fn total_energy(&self) -> f32 {
+        self.molecules.iter().fold(0.0, |acc, m| {
+            acc + 0.5 * m.mol_type.mass() * m.vel.length_sq()
+        })
     }
 }
 

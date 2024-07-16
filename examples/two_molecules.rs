@@ -4,7 +4,7 @@ use rand::Rng;
 use thermal_model::*;
 
 /// Define the molecule type for O2 and CO2
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MoleculeTypes {
     O2, CO2,
 }
@@ -13,6 +13,8 @@ const O2_COLOR: Color32 = Color32::from_rgb(228, 47, 47);
 const CO2_COLOR: Color32 = Color32::from_rgb(32, 32, 32);
 
 impl MoleculeType for MoleculeTypes {
+    const MAX_RADIUS_BETWEEN_MOLECULES: f32 = 0.230 * 2.0;
+
     fn mass(&self) -> f32 {
         match self {
             MoleculeTypes::O2 => 32.0,
@@ -78,6 +80,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             MoleculeTypes::O2 => f32::NAN,
                     }, "CO2 kinetic energy"),
                 ],
+                state_quantities: vec![
+                    (|model| Some(model.total_energy() / model.num_molecule() as f32), "average kinetic energy"),
+                    (|model| {
+                        Some(
+                            model.get_molecules()
+                                .filter(|m| m.mol_type == MoleculeTypes::O2)
+                                .fold(0.0, |acc, m| acc + 0.5 * m.mol_type.mass() * m.vel.length_sq())
+                            / model.get_molecules().filter(|m| m.mol_type == MoleculeTypes::O2).count() as f32
+                        )
+                    }, "average energy of O2"),
+                    (|model| {
+                        Some(
+                            model.get_molecules()
+                                .filter(|m| m.mol_type == MoleculeTypes::CO2)
+                                .fold(0.0, |acc, m| acc + 0.5 * m.mol_type.mass() * m.vel.length_sq())
+                            / model.get_molecules().filter(|m| m.mol_type == MoleculeTypes::CO2).count() as f32
+                        )
+                    }, "average energy of CO2"),
+                ],
                 plot_options: PlotOptions::Grid(50, 50),
             }, &cc)
         ))),
@@ -121,6 +142,25 @@ fn main() {
                                 MoleculeTypes::CO2 => 0.5 * m.mol_type.mass() * m.vel.length_sq(),
                                 MoleculeTypes::O2 => f32::NAN,
                         }, "CO2 kinetic energy"),
+                    ],
+                    state_quantities: vec![
+                        (|model| Some(model.total_energy() / model.num_molecule() as f32), "average kinetic energy"),
+                        (|model| {
+                            Some(
+                                model.get_molecules()
+                                    .filter(|m| m.mol_type == MoleculeTypes::O2)
+                                    .fold(0.0, |acc, m| acc + 0.5 * m.mol_type.mass() * m.vel.length_sq())
+                                / model.get_molecules().filter(|m| m.mol_type == MoleculeTypes::O2).count() as f32
+                            )
+                        }, "average energy of O2"),
+                        (|model| {
+                            Some(
+                                model.get_molecules()
+                                    .filter(|m| m.mol_type == MoleculeTypes::CO2)
+                                    .fold(0.0, |acc, m| acc + 0.5 * m.mol_type.mass() * m.vel.length_sq())
+                                / model.get_molecules().filter(|m| m.mol_type == MoleculeTypes::CO2).count() as f32
+                            )
+                        }, "average energy of CO2"),
                     ],
                     plot_options: PlotOptions::Grid(50, 50),
                 }, &cc)

@@ -1,6 +1,14 @@
 use eframe::egui::{Color32, Vec2};
 
 pub trait MoleculeType: Clone + Copy {
+    /// The maximum possible radius between two molecules.
+    /// 
+    /// For example, if there are 3 types of molecules, each with radius 1.0, 2.0, and
+    /// 3.0, then `MAX_RADIUS_BETWEEN_MOLECULES` should be 2 times 3.0, which equals
+    /// 6.0.
+    /// 
+    /// This is used in collision detection.
+    const MAX_RADIUS_BETWEEN_MOLECULES: f32;
     fn mass(&self) -> f32;
     fn radius(&self) -> f32;
     fn color(&self, pos: Vec2, vel: Vec2) -> Color32;

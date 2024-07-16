@@ -1,14 +1,6 @@
 use eframe::egui::{Color32, Vec2, ViewportBuilder};
-use model::MoleculeType;
-use utils::color_interp;
-use visualizer::PlotOptions;
-
-mod utils;
-mod model;
-mod model_1;
-mod model_2;
-mod model_3;
-mod visualizer;
+use thermal_model::{color_interp, MoleculeType};
+use thermal_model::{Model3, Visualizer, VisualizerOptions};
 
 #[derive(Clone, Copy, Default, Debug)]
 struct MoleculeType1;
@@ -37,9 +29,9 @@ impl MoleculeType for MoleculeType1 {
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
-    let model = model_3::Model3::<MoleculeType1, 1000>::new(150.0, 150.0, 20000, 10);
+    let model = Model3::<MoleculeType1, 10000>::new(300.0, 300.0, 80000, 10);
     // to change the effect of the visualizer, modify the options here
-    let visualizer_options = visualizer::VisualizerOptions::<model_3::Model3::<MoleculeType1, 1000>> {
+    let visualizer_options = VisualizerOptions::<Model3<MoleculeType1, 10000>> {
         plot_quantities: vec![
             (|m| m.vel.length(), "velocity magnitude"),
             (|m| m.vel.x, "velocity x"),
@@ -47,8 +39,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ],
         state_quantities: vec![
             (|model| Some(model.total_energy()), "total energy"),
+            (|model| model.average_pressure(), "average pressure"),
+            (|model| Some(model.pressure().x_pos), "pressure on positive X side"),
+            (|model| Some(model.pressure().x_neg), "pressure on negative X side"),
+            (|model| Some(model.pressure().y_pos), "pressure on positive Y side"),
+            (|model| Some(model.pressure().y_neg), "pressure on negative Y side"),
         ],
-        plot_options: PlotOptions::Grid(50, 50),
+        plot_options: thermal_model::PlotOptions::Grid(50, 50),
     };
 
     let mut native_options = eframe::NativeOptions::default();
@@ -57,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "gas molecule visualizer",
         native_options,
         Box::new(|cc| Ok(Box::new(
-            visualizer::Visualizer::new(model, 0.25, 20, visualizer_options, &cc)
+            Visualizer::new(model, 0.25, 20, visualizer_options, &cc)
         ))),
     )?;
     Ok(())
@@ -65,9 +62,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    let model = model_2::Model2::<MoleculeType1>::new(120.0, 120.0, 15000, 10);
+    let model = Model3::<MoleculeType1>::new(120.0, 120.0, 15000, 10);
     // to change the effect of the visualizer, modify the options here
-    let visualizer_options = visualizer::VisualizerOptions::<model_2::Model2<MoleculeType1>> {
+    let visualizer_options = VisualizerOptions::<Model3<MoleculeType1, 10000>> {
         plot_quantities: vec![
             (|m| m.vel.length(), "velocity magnitude"),
             (|m| m.vel.x, "velocity x"),
@@ -75,8 +72,13 @@ fn main() {
         ],
         state_quantities: vec![
             (|model| Some(model.total_energy()), "total energy"),
+            (|model| model.average_pressure(), "average pressure"),
+            (|model| Some(model.raw_pressure().x_pos), "pressure on positive X side"),
+            (|model| Some(model.raw_pressure().x_neg), "pressure on negative X side"),
+            (|model| Some(model.raw_pressure().y_pos), "pressure on positive Y side"),
+            (|model| Some(model.raw_pressure().y_neg), "pressure on negative Y side"),
         ],
-        plot_options: PlotOptions::Grid(50, 50),
+        plot_options: thermal_model::PlotOptions::Grid(50, 50),
     };
 
     eframe::WebLogger::init(log::LevelFilter::Warn).unwrap();
@@ -86,7 +88,7 @@ fn main() {
             "gas molecule visualizer",
             web_option,
             Box::new(|cc| Ok(Box::new(
-                visualizer::Visualizer::new(model, 0.25, 20, visualizer_options, &cc)
+                Visualizer::new(model, 0.25, 20, visualizer_options, &cc)
             ))),
         )
         .await

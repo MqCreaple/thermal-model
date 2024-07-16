@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::model::{Model, MoleculeType};
 use crate::model::Molecule;
@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use eframe::{self, CreationContext};
 use eframe::egui::{self, CentralPanel, Color32, Grid, Label, Mesh, Painter, Pos2, Rect, SidePanel, Stroke, TopBottomPanel, Ui, Vec2};
 use egui_plot::{Bar, BarChart, Plot};
+use log::debug;
 use ordered_float::NotNan;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,8 +18,16 @@ pub enum PlotOptions {
 
 /// Customizable options for the visualizer
 pub struct VisualizerOptions<M: Model> {
-    pub plot_options: PlotOptions,  // the threshold of the number of molecules to switch between painting all molecules and painting a grid
-    pub plot_quantities: Vec<(fn(Molecule<M::Type>) -> f32, &'static str)>,  // the quantities to plot and their names
+    /// The way to show the molecules
+    pub plot_options: PlotOptions,
+
+    /// The quantities to take a statistical summary of, along with each quantity's name
+    pub plot_quantities: Vec<(fn(Molecule<M::Type>) -> f32, &'static str)>,
+
+    /// The state quantities (e.g. pressure, temperature, entropy) to display.
+    ///
+    /// `None` represents a non-well-defined quantity
+    pub state_quantities: Vec<(fn(&M) -> Option<f32>, &'static str)>,                
 }
 
 pub struct Visualizer<M: Model> {
@@ -30,6 +39,8 @@ pub struct Visualizer<M: Model> {
 }
 
 impl<M: Model> Visualizer<M> {
+    pub const FPS: f32 = 120.0;
+
     pub fn new(model: M, speed_ratio: f32, bar_cnt: usize, options: VisualizerOptions<M>, cc: &CreationContext<'_>) -> Self {
         Self { model, speed_ratio, last_frame: Utc::now(), bar_cnt, options }
     }
@@ -59,7 +70,8 @@ fn plot_bar<'a>(ui: &mut Ui, data: &[f32], bar_cnt: usize, id: &'static str, x_l
 impl<M, A> eframe::App for Visualizer<M>
 where
     M: Model<AdvanceReturnType = A>,
-    A: Debug {
+    A: Debug
+{
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // advance the model
         let now = Utc::now();
@@ -150,6 +162,7 @@ where
                     ui.add(Label::new(format!("FPS: {}", (1.0 / time_diff) as i32)));
                     ui.add(Label::new(format!("Number of molecules: {}", self.model.num_molecule())));
                     ui.add(Label::new(format!("Last number of unchecked collisions: {:?}", ret)));
+                    
                     // show control widgets
                     let mut plot_all_molecules = self.options.plot_options == PlotOptions::All;
                     let (mut grid_x_count, mut grid_y_count) = match self.options.plot_options {
@@ -168,6 +181,19 @@ where
                             self.options.plot_options = PlotOptions::All;
                         }
                     });
+        
+                    // show all state variables
+                    for (state_fn, state_name) in &self.options.state_quantities {
+                        let quantity = state_fn(&self.model);
+                        let label = if let Some(quantity) = quantity {
+                            format!("{}: {}", state_name, quantity)
+                        } else {
+                            format!("{}: Not well defined.", state_name)
+                        };
+                        ui.add(Label::new(label));
+                    }
+                    
+                    // show all plots of quantites to plot
                     let mut graph_grid = Grid::new("graphs");
                     if use_horizontal_layout {
                         graph_grid = graph_grid.min_col_width(ui.available_width());
@@ -187,6 +213,6 @@ where
             });
         });
         // request repaint to ensure a minimum update frequency
-        ctx.request_repaint_after(Duration::from_secs_f32(0.0f32.max(1.0 / 120.0 - time_diff)));
+        ctx.request_repaint_after(Duration::from_secs_f32(0.0f32.max(1.0 / Self::FPS - time_diff)));
     }
 }
