@@ -1,8 +1,6 @@
-use std::{collections::BTreeSet, time::Instant};
+use std::time::Instant;
 
 use eframe::egui::Vec2;
-use num::Zero;
-use ordered_float::NotNan;
 use rand::Rng;
 
 use crate::{model::{Model, Molecule, MoleculeType}, utils};

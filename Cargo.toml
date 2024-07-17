@@ -19,6 +19,7 @@ log = "0.4.22"
 chrono = "0.4.38"
 env_logger = "0.11.3"
 ringbuffer = "0.15.0"
+rand_distr = "0.4.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"

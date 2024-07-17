@@ -1,5 +1,6 @@
 use std::fmt::Debug;
-use std::time::{Duration, Instant};
+use std::ops::{Add, AddAssign};
+use std::time::Duration;
 
 use crate::model::{Model, MoleculeType};
 use crate::model::Molecule;
@@ -7,8 +8,6 @@ use chrono::{DateTime, Utc};
 use eframe::{self, CreationContext};
 use eframe::egui::{self, CentralPanel, Color32, Grid, Label, Mesh, Painter, Pos2, Rect, SidePanel, Stroke, TopBottomPanel, Ui, Vec2};
 use egui_plot::{Bar, BarChart, Plot};
-use log::debug;
-use ordered_float::NotNan;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlotOptions {
@@ -17,7 +16,11 @@ pub enum PlotOptions {
 }
 
 /// Customizable options for the visualizer
-pub struct VisualizerOptions<M: Model> {
+/// 
+/// `M`: Type of the model to visualize
+/// 
+/// `G`: Type of the quantity to sum in the grid
+pub struct VisualizerOptions<M: Model, G: AddAssign + Default + Clone> {
     /// The way to show the molecules
     pub plot_options: PlotOptions,
 
@@ -27,21 +30,43 @@ pub struct VisualizerOptions<M: Model> {
     /// The state quantities (e.g. pressure, temperature, entropy) to display.
     ///
     /// `None` represents a non-well-defined quantity
-    pub state_quantities: Vec<(fn(&M) -> Option<f32>, &'static str)>,                
+    pub state_quantities: Vec<(fn(&M) -> Option<f32>, &'static str)>,
+
+    /// The color of molecule when plotting with PlotOptions::All
+    /// 
+    /// - Input: The molecule to plot
+    /// - Output: The color to plot the molecule in PlotOption::All
+    pub molecule_color: fn(&Molecule<M::Type>) -> Color32,
+
+    /// The quantity to calculate for each molecule in a grid
+    /// 
+    /// - Input: The molecule within a grid
+    /// - Output: The quantity to add to the grid counter
+    pub grid_quantity: fn(&Molecule<M::Type>) -> G,
+
+    /// The color to plot the grid when given the grid a color
+    /// 
+    /// - Input:
+    ///     1. The grid counter
+    ///     2. The reference to the model
+    ///     3. The number of grids on x direction
+    ///     4. the number of grids on y direction
+    /// - Output: The color to plot to the grid
+    pub grid_color: fn(G, &M, usize, usize) -> Color32,
 }
 
-pub struct Visualizer<M: Model> {
+pub struct Visualizer<M: Model, G: AddAssign + Default + Clone> {
     model: M,
     speed_ratio: f32,   // the ratio of the speed of the model to the actual speed
     bar_cnt: usize,     // number of bars in the summary histogram
     last_frame: DateTime<Utc>,
-    options: VisualizerOptions<M>,
+    options: VisualizerOptions<M, G>,
 }
 
-impl<M: Model> Visualizer<M> {
+impl<M: Model, G: AddAssign + Default + Clone> Visualizer<M, G> {
     pub const FPS: f32 = 120.0;
 
-    pub fn new(model: M, speed_ratio: f32, bar_cnt: usize, options: VisualizerOptions<M>, cc: &CreationContext<'_>) -> Self {
+    pub fn new(model: M, speed_ratio: f32, bar_cnt: usize, options: VisualizerOptions<M, G>, _cc: &CreationContext<'_>) -> Self {
         Self { model, speed_ratio, last_frame: Utc::now(), bar_cnt, options }
     }
 }
@@ -67,10 +92,11 @@ fn plot_bar<'a>(ui: &mut Ui, data: &[f32], bar_cnt: usize, id: &'static str, x_l
         .show(ui, |plot_ui| plot_ui.bar_chart(bar_chart));
 }
 
-impl<M, A> eframe::App for Visualizer<M>
+impl<M, A, G> eframe::App for Visualizer<M, G>
 where
     M: Model<AdvanceReturnType = A>,
-    A: Debug
+    A: Debug,
+    G: AddAssign + Default + Clone,
 {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // advance the model
@@ -102,7 +128,7 @@ where
                             let pos = m.pos * min_pixels_per_point;
                             let pos = Pos2::new(pos.x, pos.y);
                             let radius = m.mol_type.radius() * min_pixels_per_point;
-                            painter.circle(pos, radius, m.mol_type.color(m.pos, m.vel), egui::Stroke::default());
+                            painter.circle(pos, radius, (self.options.molecule_color)(&m), egui::Stroke::default());
                         });
                         // paint the boundary
                         painter.rect(
@@ -115,7 +141,7 @@ where
                     PlotOptions::Grid(grid_x_count, grid_y_count) => {
                         // draw a grid and count the number of molecules in each grid
                         let grid_size = grid_x_count * grid_y_count;
-                        let mut grid = vec![0u32; grid_size];
+                        let mut grid = vec![G::default(); grid_size];
                         let molecules = self.model.get_molecules();
                         let grid_width = width / grid_x_count as f32;
                         let grid_height = height / grid_y_count as f32;
@@ -123,7 +149,7 @@ where
                             let x = (m.pos.x / grid_width).floor() as usize;
                             let y = (m.pos.y / grid_height).floor() as usize;
                             if x < grid_x_count && y < grid_y_count {
-                                grid[x * grid_y_count + y] += 1;
+                                grid[x * grid_y_count + y] += (self.options.grid_quantity)(&m);
                             }
                         });
                         let mut mesh = Mesh::default();
@@ -131,16 +157,14 @@ where
                         let display_height = height * min_pixels_per_point;
                         for x in 0..grid_x_count {
                             for y in 0..grid_y_count {
-                                let count = grid[x * grid_y_count + y];
-                                let multiplier = f32::min(1.0, 0.5 * (count as usize * grid_size) as f32 / self.model.num_molecule() as f32);
-                                let color = egui::Color32::from_rgb((255.0 * multiplier) as u8, (255.0 * multiplier) as u8, (255.0 * multiplier) as u8);
+                                let quantity = grid[x * grid_y_count + y].clone();
                                 let x = x as f32 * display_width / grid_x_count as f32;
                                 let y = y as f32 * display_height / grid_y_count as f32;
                                 let width = display_width / grid_x_count as f32;
                                 let height = display_height / grid_y_count as f32;
                                 mesh.add_colored_rect(
                                     Rect::from_min_size(Pos2::new(x, y), Vec2::new(width, height)),
-                                    color
+                                    (self.options.grid_color)(quantity, &self.model, grid_x_count, grid_y_count),
                                 );
                             }
                         }

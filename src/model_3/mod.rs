@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::ops::{Add, Div};
 use std::sync::{Arc, Barrier, Mutex};
 use std::{array, thread};
+use std::f32;
 
 use ordered_float::NotNan;
 
@@ -84,6 +85,8 @@ pub struct Model3<T: MoleculeType, const N: usize> {
     kd_tree_max_elem: usize,
     /// The ring buffer of pressures on the four walls
     pub(crate) pressures: ConstGenericRingBuffer<PressureEntry, N>,
+    /// Total volume occupied by molecules ($\sum_{i=1}^n πr_i^2$)
+    pub(crate) molecule_volume: f32,
 }
 
 pub const THREAD_WIDTH: usize = 4;
@@ -105,7 +108,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
             let vertical_bound_mols: [[Arc<Mutex<BTreeSet<SetKey>>>; THREAD_HEIGHT + 1]; THREAD_WIDTH] =
                 array::from_fn(|_| array::from_fn(|_| Arc::new(Mutex::new(BTreeSet::new()))));
 
-            for thread_idx in 0..THREAD_WIDTH * THREAD_HEIGHT {
+            let threads = (0..THREAD_WIDTH * THREAD_HEIGHT).map(|thread_idx| { {
                 let molecules = MoleculeMutPtr(self.molecules.as_mut_ptr());
                 let barrier_clone = barrier.clone();
                 let grid_i = thread_idx % THREAD_WIDTH;
@@ -152,7 +155,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                                 let mol2 = unsafe { molecules.0.add(j).as_mut() };
                                 if let Some(mol2) = mol2 {
                                     let radius2 = mol2.mol_type.radius();
-                                    if i < j && Vec2::length(mol1.pos - mol2.pos) < radius1 + radius2 {
+                                    if i < j && Vec2::length_sq(mol1.pos - mol2.pos) < (radius1 + radius2) * (radius1 + radius2) {
                                         utils::collision_2_molecules(mol1, mol2);
                                     }
                                 } else {
@@ -188,7 +191,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
 
                     // each thread picks a boundary and process collision
                     if grid_i >= 1 {
-                        // evaluate collisions on horizontal bound
+                        // process collisions on horizontal boundaries
                         let bound_mols = left_bound_mols.lock().unwrap();
                         for key1 in bound_mols.iter() {
                             let i = key1.0;
@@ -200,13 +203,14 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                                 let j = key2.0;
                                 let mol2 = unsafe { molecules.0.add(j).as_mut().unwrap() };
                                 let radius2 = mol2.mol_type.radius();
-                                if Vec2::length(mol1.pos - mol2.pos) <= radius1 + radius2 {
+                                if i < j && Vec2::length_sq(mol1.pos - mol2.pos) <= (radius1 + radius2) * (radius1 + radius2) {
                                     utils::collision_2_molecules(mol1, mol2);
                                 }
                             }
                         }
                     }
                     if grid_j >= 1 {
+                        // process collisions on vertical boundaries
                         let bound_mols = up_bound_mols.lock().unwrap();
                         for key1 in bound_mols.iter() {
                             let i = key1.0;
@@ -218,50 +222,72 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                                 let j = key2.0;
                                 let mol2 = unsafe { molecules.0.add(j).as_mut().unwrap() };
                                 let radius2 = mol2.mol_type.radius();
-                                if Vec2::length(mol1.pos - mol2.pos) <= radius1 + radius2 {
+                                if i < j && Vec2::length_sq(mol1.pos - mol2.pos) <= (radius1 + radius2) * (radius1 + radius2) {
                                     utils::collision_2_molecules(mol1, mol2);
                                 }
                             }
                         }
                     }
-                });
-            }
-        });
+                })
+            }}).collect::<Vec<_>>();
+            threads.into_iter().for_each(|t| t.join().unwrap());
 
-        // handle collisions with walls
-        let mut pressure = PressureEntry::default();
-        for m in self.molecules.iter_mut() {
-            let radius = m.mol_type.radius();
-            if m.pos.x - radius < 0.0 {
-                m.pos.x = 2.0 * radius - m.pos.x;
-                m.vel.x = -m.vel.x;
-                pressure.x_neg += 2.0 * m.vel.x * m.mol_type.mass();
+            // handle collisions with walls
+            let mut pressure = PressureEntry::default();
+            for j in 0..THREAD_HEIGHT {
+                let left_wall = horizontal_bound_mols[0][j].lock().unwrap();
+                for key in left_wall.iter() {
+                    // collisions with left wall
+                    let i = key.0;
+                    let m = &mut self.molecules[i];
+                    let radius = m.mol_type.radius();
+                    m.pos.x = 2.0 * radius - m.pos.x;
+                    m.vel.x = -m.vel.x;
+                    pressure.x_neg += 2.0 * m.vel.x * m.mol_type.mass();
+                }
+                let right_wall = horizontal_bound_mols[THREAD_WIDTH][j].lock().unwrap();
+                for key in right_wall.iter() {
+                    // collisions with right wall
+                    let i = key.0;
+                    let m = &mut self.molecules[i];
+                    let radius = m.mol_type.radius();
+                    m.pos.x = 2.0 * self.width - 2.0 * radius - m.pos.x;
+                    m.vel.x = -m.vel.x;
+                    pressure.x_pos -= 2.0 * m.vel.x * m.mol_type.mass();
+                }
             }
-            if m.pos.x + radius > self.width {
-                m.pos.x = 2.0 * self.width - 2.0 * radius - m.pos.x;
-                m.vel.x = -m.vel.x;
-                pressure.x_pos -= 2.0 * m.vel.x * m.mol_type.mass();
+            for i in 0..THREAD_WIDTH {
+                let up_wall = vertical_bound_mols[i][0].lock().unwrap();
+                for key in up_wall.iter() {
+                    // collisions with up wall
+                    let i = key.0;
+                    let m = &mut self.molecules[i];
+                    let radius = m.mol_type.radius();
+                    m.pos.y = 2.0 * radius - m.pos.y;
+                    m.vel.y = -m.vel.y;
+                    pressure.y_neg += 2.0 * m.vel.y * m.mol_type.mass();
+                }
+                let down_wall = vertical_bound_mols[i][THREAD_HEIGHT].lock().unwrap();
+                for key in down_wall.iter() {
+                    // collisions with down wall
+                    let i = key.0;
+                    let m = &mut self.molecules[i];
+                    let radius = m.mol_type.radius();
+                    m.pos.y = 2.0 * self.height - 2.0 * radius - m.pos.y;
+                    m.vel.y = -m.vel.y;
+                    pressure.y_pos -= 2.0 * m.vel.y * m.mol_type.mass();
+                }
             }
-            if m.pos.y - radius < 0.0 {
-                m.pos.y = 2.0 * radius - m.pos.y;
-                m.vel.y = -m.vel.y;
-                pressure.y_neg += 2.0 * m.vel.y * m.mol_type.mass();
-            }
-            if m.pos.y + radius > self.height {
-                m.pos.y = 2.0 * self.height - 2.0 * radius - m.pos.y;
-                m.vel.y = -m.vel.y;
-                pressure.y_pos -= 2.0 * m.vel.y * m.mol_type.mass();
-            }
-        }
-        pressure.x_neg /= self.width * dt;
-        pressure.x_pos /= self.width * dt;
-        pressure.y_neg /= self.height * dt;
-        pressure.y_pos /= self.height * dt;
-        pressure
+            pressure.x_neg /= self.width * dt;
+            pressure.x_pos /= self.width * dt;
+            pressure.y_neg /= self.height * dt;
+            pressure.y_pos /= self.height * dt;
+            pressure
+        })
     }
 
     pub fn volume(&self) -> f32 {
-        self.width * self.height
+        self.width * self.height - self.molecule_volume
     }
 
     pub fn total_energy(&self) -> f32 {
@@ -300,15 +326,21 @@ impl<T: MoleculeType + Default + Send + Sync, const N: usize> Model3<T, N> {
         let molecules = (0..num_molecule).map(|_| {
             Molecule {
                 pos: Vec2::new(rng.gen_range(radius..(width - radius)), rng.gen_range(radius..(height - radius))),
-                vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
+                vel: utils::sample_rand_velocity(&mut rng, 0.64),
                 mol_type: default,
             }
-        }).collect();
+        }).collect::<Vec<_>>();
+        let molecule_volume = molecules.iter()
+            .fold(0.0, |acc, m| {
+                let radius = m.mol_type.radius();
+                acc + f32::consts::PI * radius * radius
+            });
         Self {
             molecules, width, height, kd_tree_max_elem,
             unit_width: width / THREAD_WIDTH as f32,
             unit_height: height / THREAD_HEIGHT as f32,
             pressures: ConstGenericRingBuffer::new(),
+            molecule_volume,
         }
     }
 }
@@ -318,12 +350,18 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model for Model3<T, N> {
     type AdvanceReturnType = usize;
 
     fn construct(width: f32, height: f32, num_molecule: usize, constructor: impl FnMut(usize) ->  Molecule<Self::Type>) -> Self {
-        let molecules = (0..num_molecule).map(constructor).collect();
+        let molecules = (0..num_molecule).map(constructor).collect::<Vec<_>>();
+        let molecule_volume = molecules.iter()
+            .fold(0.0, |acc, m| {
+                let radius = m.mol_type.radius();
+                acc + f32::consts::PI * radius * radius
+            });
         Self {
             molecules, width, height, kd_tree_max_elem: 10,
             unit_width: width / THREAD_WIDTH as f32,
             unit_height: height / THREAD_HEIGHT as f32,
             pressures: ConstGenericRingBuffer::new(),
+            molecule_volume,
         }
     }
 

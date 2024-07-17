@@ -11,7 +11,6 @@ pub trait MoleculeType: Clone + Copy {
     const MAX_RADIUS_BETWEEN_MOLECULES: f32;
     fn mass(&self) -> f32;
     fn radius(&self) -> f32;
-    fn color(&self, pos: Vec2, vel: Vec2) -> Color32;
 }
 
 #[derive(Clone, Copy, Default, Debug)]
