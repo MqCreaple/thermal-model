@@ -13,7 +13,7 @@ const O2_COLOR: Color32 = Color32::from_rgb(228, 47, 47);
 const CO2_COLOR: Color32 = Color32::from_rgb(32, 32, 32);
 
 impl MoleculeType for MoleculeTypes {
-    const MAX_RADIUS_BETWEEN_MOLECULES: f32 = 0.230 * 2.0;
+    const MAX_RADIUS: f32 = 0.230;
 
     fn mass(&self) -> f32 {
         match self {

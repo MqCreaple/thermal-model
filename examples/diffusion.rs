@@ -11,7 +11,7 @@ enum MoleculeTypes {
 }
 
 impl MoleculeType for MoleculeTypes {
-    const MAX_RADIUS_BETWEEN_MOLECULES: f32 = 0.2;
+    const MAX_RADIUS: f32 = 0.1;
 
     fn mass(&self) -> f32 { 1.0 }
 

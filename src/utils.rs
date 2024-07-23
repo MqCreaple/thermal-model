@@ -6,6 +6,13 @@ use rand_distr::{Distribution, Normal};
 
 use crate::model::{Molecule, MoleculeType};
 
+/// Calculate the final velocities of two objects after an elastic collision.
+pub fn velocity_change(m1: f32, m2: f32, v1: f32, v2: f32) -> (f32, f32) {
+    let v1_change = 2.0 * m2 * (v2 - v1) / (m1 + m2);
+    let v2_change = 2.0 * m1 * (v1 - v2) / (m1 + m2);
+    (v1_change, v2_change)
+}
+
 pub fn collision_2_molecules<T: MoleculeType>(mol1: &mut Molecule<T>, mol2: &mut Molecule<T>) {
     // calculate velocities after collision
     let normal = (mol2.pos - mol1.pos).normalized();
@@ -13,8 +20,9 @@ pub fn collision_2_molecules<T: MoleculeType>(mol1: &mut Molecule<T>, mol2: &mut
     let m2 = mol2.mol_type.mass();
     let v1 = mol1.vel.dot(normal);
     let v2 = mol2.vel.dot(normal);
-    let v1_final = 2.0 * m2 * (v2 - v1) / (m1 + m2) * normal + mol1.vel;
-    let v2_final = 2.0 * m1 * (v1 - v2) / (m1 + m2) * normal + mol2.vel;
+    let (v1_change, v2_change) = velocity_change(m1, m2, v1, v2);
+    let v1_final = v1_change * normal + mol1.vel;
+    let v2_final = v2_change * normal + mol2.vel;
     // update the two molecules' positions and velocities
     mol1.vel = v1_final;
     mol2.vel = v2_final;
@@ -64,6 +72,12 @@ pub fn sample_rand_velocity(rng: &mut impl Rng, stdev: f32) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_collision() {
+        assert_eq!(velocity_change(1.0, 1.0, 1.0, 0.0), (-1.0, 1.0));
+        assert_eq!(velocity_change(1.0, 1.0, 1.0, -1.0), (-2.0, 2.0));
+    }
 
     #[test]
     fn test_interpolation() {

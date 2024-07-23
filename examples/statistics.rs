@@ -1,4 +1,4 @@
-use eframe::egui::{Color32, Vec2, ViewportBuilder};
+use eframe::egui::{Color32, ViewportBuilder};
 use thermal_model::{color_interp, MoleculeType};
 use thermal_model::{Model3, Visualizer, VisualizerOptions};
 
@@ -8,12 +8,12 @@ struct MoleculeType1;
 // molecule color constants
 const COLOR_HOT: Color32 = Color32::from_rgb(228, 47, 47);
 const COLOR_COLD: Color32 = Color32::from_rgb(43, 110, 197);
-const MAX_VELOCITY: f32 = 1.414;
+const MAX_VELOCITY: f32 = 1.5;
 // const COLOR_HOT: Color32 = Color32::from_rgb(0, 0, 0);
 // const COLOR_COLD: Color32 = Color32::from_rgb(255, 255, 255);
 
 impl MoleculeType for MoleculeType1 {
-    const MAX_RADIUS_BETWEEN_MOLECULES: f32 = 0.2;
+    const MAX_RADIUS: f32 = 0.1;
 
     fn mass(&self) -> f32 { 1.0 }
 
@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (|m| m.vel.length(), "velocity magnitude"),
         ],
         state_quantities: vec![
-            (|model| Some(model.total_energy()), "total energy (nkT)"),
+            (|model| Some(model.total_energy()), "internal energy (U=nkT)"),
             (|model| model.average_pressure(), "average pressure"),
             (|model| Some(model.volume()), "volume"),
             (
@@ -77,7 +77,7 @@ fn main() {
             (|m| m.vel.y, "velocity y"),
         ],
         state_quantities: vec![
-            (|model| Some(model.total_energy()), "total energy"),
+            (|model| Some(model.total_energy()), "internal energy (U=nkT)"),
             (|model| model.average_pressure(), "average pressure"),
             (|model| Some(model.raw_pressure().x_pos), "pressure on positive X side"),
             (|model| Some(model.raw_pressure().x_neg), "pressure on negative X side"),

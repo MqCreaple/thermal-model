@@ -66,11 +66,12 @@ impl<T: MoleculeType> Model2<T> {
         let num_molecules = self.molecules.len();
         for i in 0..num_molecules {
             let mol1 = self.molecules[i];
-            let neighbors = kd_tree.query_circle(mol1.pos, T::MAX_RADIUS_BETWEEN_MOLECULES).unwrap_or(Vec::new());
+            let radius1 = mol1.mol_type.radius();
+            let neighbors = kd_tree.query_circle(mol1.pos, radius1 + T::MAX_RADIUS).unwrap_or(Vec::new());
             for indexed_mol2 in neighbors {
                 let j = indexed_mol2.index;
                 let mol2 = &self.molecules[indexed_mol2.index];
-                if i < j && Vec2::length(mol1.pos - mol2.pos) < mol1.mol_type.radius() + mol2.mol_type.radius() {
+                if i < j && Vec2::length(mol1.pos - mol2.pos) < radius1 + mol2.mol_type.radius() {
                     let (slice_1, slice_2) = self.molecules.split_at_mut(i.max(j));
                     // handle collision
                     utils::collision_2_molecules(&mut slice_1[i.min(j)], &mut slice_2[0]);
@@ -106,7 +107,7 @@ impl<T: MoleculeType> Model2<T> {
             }
         }
         // let c4 = Instant::now();
-        // log::debug!(
+        // log::trace!(
         //     "kd tree build: {:?} μs, molecule-molecule collision: {:?} μs, molecule-wall collision: {:?} μs",
         //     (c2 - c1).as_micros(),
         //     (c3 - c2).as_micros(),

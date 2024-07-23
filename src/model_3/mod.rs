@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::ops::{Add, Div};
 use std::sync::{Arc, Barrier, Mutex};
+use std::time::Instant;
 use std::{array, thread};
 use std::f32;
 
@@ -86,7 +87,7 @@ pub struct Model3<T: MoleculeType, const N: usize> {
     /// The ring buffer of pressures on the four walls
     pub(crate) pressures: ConstGenericRingBuffer<PressureEntry, N>,
     /// Total volume occupied by molecules ($\sum_{i=1}^n πr_i^2$)
-    pub(crate) molecule_volume: f32,
+    molecule_volume: f32,
 }
 
 pub const THREAD_WIDTH: usize = 4;
@@ -120,6 +121,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                 let up_bound_mols = vertical_bound_mols[grid_i][grid_j].clone();
                 let down_bound_mols = vertical_bound_mols[grid_i][grid_j + 1].clone();
                 s.spawn(move || {
+                    let c1 = Instant::now();
                     let _ = &molecules;
                     let mut indexed_molecules = (0..num_molecules)
                         .map(|i| (i, unsafe { molecules.0.add(i) }))
@@ -132,9 +134,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                         })
                         .collect::<Vec<_>>();
                     let index_set = indexed_molecules.iter().map(|m| m.index).collect::<Vec<_>>();
-                    // TODO URGENT: sometimes deadlocks happen in the code. Need to debug.
                     barrier_clone.wait();
-                    log::debug!("First sync:\t{}", thread_idx);
                     // This operation may not look safe, but since before the sync statement,
                     // every thread saves a different set of indices to check collision.
                     // In other words, let M be the set of molecules, then thread i is selecting
@@ -149,7 +149,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                         let mol1 = unsafe { molecules.0.add(i).as_mut() };
                         if let Some(mol1) = mol1 {
                             let radius1 = mol1.mol_type.radius();
-                            let neighbors = kd_tree.query_circle(mol1.pos, T::MAX_RADIUS_BETWEEN_MOLECULES).unwrap_or(Vec::new());
+                            let neighbors = kd_tree.query_circle(mol1.pos, radius1 + T::MAX_RADIUS).unwrap_or(Vec::new());
                             for mol2 in neighbors {
                                 let j = mol2.index;
                                 let mol2 = unsafe { molecules.0.add(j).as_mut() };
@@ -187,7 +187,6 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                         }
                     }
                     barrier_clone.wait();
-                    log::debug!("Second sync:\t{}", thread_idx);
 
                     // each thread picks a boundary and process collision
                     if grid_i >= 1 {
@@ -197,8 +196,8 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                             let i = key1.0;
                             let mol1 = unsafe { molecules.0.add(i).as_mut().unwrap() };
                             let radius1 = mol1.mol_type.radius();
-                            let up_bound = NotNan::new(mol1.pos.y - T::MAX_RADIUS_BETWEEN_MOLECULES).unwrap();
-                            let down_bound = NotNan::new(mol1.pos.y + T::MAX_RADIUS_BETWEEN_MOLECULES).unwrap();
+                            let up_bound = NotNan::new(mol1.pos.y - T::MAX_RADIUS).unwrap();
+                            let down_bound = NotNan::new(mol1.pos.y + T::MAX_RADIUS).unwrap();
                             for key2 in bound_mols.range(SetKey(i, up_bound)..SetKey(i, down_bound)) {
                                 let j = key2.0;
                                 let mol2 = unsafe { molecules.0.add(j).as_mut().unwrap() };
@@ -216,8 +215,8 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                             let i = key1.0;
                             let mol1 = unsafe { molecules.0.add(i).as_mut().unwrap() };
                             let radius1 = mol1.mol_type.radius();
-                            let left_bound = NotNan::new(mol1.pos.x - T::MAX_RADIUS_BETWEEN_MOLECULES).unwrap();
-                            let right_bound = NotNan::new(mol1.pos.x + T::MAX_RADIUS_BETWEEN_MOLECULES).unwrap();
+                            let left_bound = NotNan::new(mol1.pos.x - T::MAX_RADIUS).unwrap();
+                            let right_bound = NotNan::new(mol1.pos.x + T::MAX_RADIUS).unwrap();
                             for key2 in bound_mols.range(SetKey(i, left_bound)..SetKey(i, right_bound)) {
                                 let j = key2.0;
                                 let mol2 = unsafe { molecules.0.add(j).as_mut().unwrap() };
@@ -228,12 +227,16 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                             }
                         }
                     }
+                    let c2 = Instant::now();
+                    log::trace!("Thread {} finished in {} microseconds", thread_idx, (c2 - c1).as_micros());
                 })
             }}).collect::<Vec<_>>();
             threads.into_iter().for_each(|t| t.join().unwrap());
+            log::trace!("All threads finished");
 
             // handle collisions with walls
             let mut pressure = PressureEntry::default();
+            let mut lid_cumulated_impulse = 0.0;
             for j in 0..THREAD_HEIGHT {
                 let left_wall = horizontal_bound_mols[0][j].lock().unwrap();
                 for key in left_wall.iter() {
@@ -278,10 +281,10 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                     pressure.y_pos -= 2.0 * m.vel.y * m.mol_type.mass();
                 }
             }
-            pressure.x_neg /= self.width * dt;
-            pressure.x_pos /= self.width * dt;
-            pressure.y_neg /= self.height * dt;
-            pressure.y_pos /= self.height * dt;
+            pressure.x_neg /= self.height * dt;
+            pressure.x_pos /= self.height * dt;
+            pressure.y_neg /= self.width * dt;
+            pressure.y_pos /= self.width * dt;
             pressure
         })
     }
@@ -330,6 +333,7 @@ impl<T: MoleculeType + Default + Send + Sync, const N: usize> Model3<T, N> {
                 mol_type: default,
             }
         }).collect::<Vec<_>>();
+        // precompiute the total collision volume of all molecules
         let molecule_volume = molecules.iter()
             .fold(0.0, |acc, m| {
                 let radius = m.mol_type.radius();
@@ -347,7 +351,7 @@ impl<T: MoleculeType + Default + Send + Sync, const N: usize> Model3<T, N> {
 
 impl<T: MoleculeType + Send + Sync, const N: usize> Model for Model3<T, N> {
     type Type = T;
-    type AdvanceReturnType = usize;
+    type AdvanceReturnType = ();
 
     fn construct(width: f32, height: f32, num_molecule: usize, constructor: impl FnMut(usize) ->  Molecule<Self::Type>) -> Self {
         let molecules = (0..num_molecule).map(constructor).collect::<Vec<_>>();
@@ -377,7 +381,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model for Model3<T, N> {
         self.molecules.iter().cloned()
     }
 
-    fn advance(&mut self, dt: f32) -> usize {
+    fn advance(&mut self, dt: f32) -> () {
         for _ in 0..4 {
             // move all molecules along their speeds
             for m in self.molecules.iter_mut() {
@@ -387,6 +391,5 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model for Model3<T, N> {
             let pressure = self.handle_collision(dt * 0.25);
             self.pressures.push(pressure);
         }
-        0
     }
 }
