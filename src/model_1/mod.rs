@@ -1,10 +1,13 @@
 use eframe::egui::Vec2;
 use rand::Rng;
 
-use crate::{model::{Model, Molecule}, utils, MoleculeType};
+use crate::{
+    model::{Model, Molecule},
+    utils, MoleculeType,
+};
 
 /// Naive implementation of gas model
-/// 
+///
 /// Use O(N^2) algorithm to check and process every collision within every frame.
 pub struct Model1<T: MoleculeType> {
     molecules: Vec<Molecule<T>>,
@@ -12,26 +15,31 @@ pub struct Model1<T: MoleculeType> {
     height: f32,
 }
 
-impl<T: MoleculeType + Default> Model1 <T>{
+impl<T: MoleculeType + Default> Model1<T> {
     pub fn new(width: f32, height: f32, radius: f32, mass: f32, num_molecule: usize) -> Self {
         let mol_type = T::default();
         let mut rng = rand::thread_rng();
-        let molecules = (0..num_molecule).map(|_| {
-            Molecule {
-                pos: Vec2::new(rng.gen_range(radius..(width - radius)), rng.gen_range(radius..(height - radius))),
+        let molecules = (0..num_molecule)
+            .map(|_| Molecule {
+                pos: Vec2::new(
+                    rng.gen_range(radius..(width - radius)),
+                    rng.gen_range(radius..(height - radius)),
+                ),
                 vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
                 mol_type,
-            }
-        }).collect();
+            })
+            .collect();
         Self {
-            molecules, width, height
+            molecules,
+            width,
+            height,
         }
     }
 }
 
 impl<T: MoleculeType> Model1<T> {
     /// Handle collision between molecules.
-    /// 
+    ///
     /// Returns the total number of collisions occured, including both molecule-molecule and molecule-wall collisions.
     fn handle_collision(&mut self) -> usize {
         let mut total_collisions = 0;
@@ -42,7 +50,9 @@ impl<T: MoleculeType> Model1<T> {
             let mol1 = left[i];
             for j in 0..(num_molecules - i - 1) {
                 let mol2 = right[j];
-                if Vec2::length(mol1.pos - mol2.pos) <= mol1.mol_type.radius() + mol2.mol_type.radius() {
+                if Vec2::length(mol1.pos - mol2.pos)
+                    <= mol1.mol_type.radius() + mol2.mol_type.radius()
+                {
                     utils::collision_2_molecules(&mut left[i], &mut right[j]);
                     total_collisions += 1;
                 }
@@ -80,10 +90,17 @@ impl<T: MoleculeType> Model for Model1<T> {
     type Type = T;
     type AdvanceReturnType = usize;
 
-    fn construct(width: f32, height: f32, num_molecule: usize, constructor: impl FnMut(usize) -> Molecule<Self::Type>) -> Self {
+    fn construct(
+        width: f32,
+        height: f32,
+        num_molecule: usize,
+        constructor: impl FnMut(usize) -> Molecule<Self::Type>,
+    ) -> Self {
         let molecules = (0..num_molecule).map(constructor).collect();
         Self {
-            molecules, width, height
+            molecules,
+            width,
+            height,
         }
     }
 
@@ -108,6 +125,6 @@ impl<T: MoleculeType> Model for Model1<T> {
         for _ in 0..4 {
             self.handle_collision();
         }
-        self.handle_collision()      // Return the last collision count. Expected to be 0.
+        self.handle_collision() // Return the last collision count. Expected to be 0.
     }
 }

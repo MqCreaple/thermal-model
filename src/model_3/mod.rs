@@ -1,9 +1,9 @@
 use std::collections::BTreeSet;
+use std::f32;
 use std::ops::{Add, Div};
 use std::sync::{Arc, Barrier, Mutex};
 use std::time::Instant;
 use std::{array, thread};
-use std::f32;
 
 use ordered_float::NotNan;
 
@@ -34,7 +34,6 @@ impl Add for PressureEntry {
             y_pos: self.y_pos + rhs.y_pos,
         }
     }
-
 }
 
 impl Div<f32> for PressureEntry {
@@ -48,7 +47,6 @@ impl Div<f32> for PressureEntry {
             y_pos: self.y_pos / rhs,
         }
     }
-
 }
 
 /// A wrapper type for `*mut Molecule<T>` that implements `Send`.
@@ -73,16 +71,16 @@ impl Ord for SetKey {
 }
 
 /// The third model that records all the thermodynamic properties of the gas.
-/// 
+///
 /// It also uses multithreading to improve the performance of the simulation.
-/// 
+///
 /// `N` is the number of frames to record.
 pub struct Model3<T: MoleculeType, const N: usize> {
     molecules: Vec<Molecule<T>>,
     width: f32,
     height: f32,
-    unit_width: f32,    // width / THREAD_WIDTH
-    unit_height: f32,   // height / THREAD_HEIGHT
+    unit_width: f32,  // width / THREAD_WIDTH
+    unit_height: f32, // height / THREAD_HEIGHT
     kd_tree_max_elem: usize,
     /// The ring buffer of pressures on the four walls
     pub(crate) pressures: ConstGenericRingBuffer<PressureEntry, N>,
@@ -94,7 +92,6 @@ pub const THREAD_WIDTH: usize = 4;
 pub const THREAD_HEIGHT: usize = 4;
 
 impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
-
     fn handle_collision(&mut self, dt: f32) -> PressureEntry {
         // divide the space to THREAD_WIDTH times THREAD_HEIGHT grids and
         // assign each grid a thread
@@ -104,133 +101,185 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
             let num_molecules = self.molecules.len();
             let kd_tree_max_elem = self.kd_tree_max_elem;
 
-            let horizontal_bound_mols: [[Arc<Mutex<BTreeSet<SetKey>>>; THREAD_HEIGHT]; THREAD_WIDTH + 1] =
+            let horizontal_bound_mols: [[Arc<Mutex<BTreeSet<SetKey>>>; THREAD_HEIGHT];
+                THREAD_WIDTH + 1] =
                 array::from_fn(|_| array::from_fn(|_| Arc::new(Mutex::new(BTreeSet::new()))));
-            let vertical_bound_mols: [[Arc<Mutex<BTreeSet<SetKey>>>; THREAD_HEIGHT + 1]; THREAD_WIDTH] =
+            let vertical_bound_mols: [[Arc<Mutex<BTreeSet<SetKey>>>; THREAD_HEIGHT + 1];
+                THREAD_WIDTH] =
                 array::from_fn(|_| array::from_fn(|_| Arc::new(Mutex::new(BTreeSet::new()))));
 
-            let threads = (0..THREAD_WIDTH * THREAD_HEIGHT).map(|thread_idx| { {
-                let molecules = MoleculeMutPtr(self.molecules.as_mut_ptr());
-                let barrier_clone = barrier.clone();
-                let grid_i = thread_idx % THREAD_WIDTH;
-                let grid_j = thread_idx / THREAD_WIDTH;
-                let grid_x_range = (grid_i as f32 * self.unit_width)..((grid_i + 1) as f32 * self.unit_width);
-                let grid_y_range = (grid_j as f32 * self.unit_height)..((grid_j + 1) as f32 * self.unit_height);
-                let left_bound_mols = horizontal_bound_mols[grid_i][grid_j].clone();
-                let right_bound_mols = horizontal_bound_mols[grid_i + 1][grid_j].clone();
-                let up_bound_mols = vertical_bound_mols[grid_i][grid_j].clone();
-                let down_bound_mols = vertical_bound_mols[grid_i][grid_j + 1].clone();
-                s.spawn(move || {
-                    let c1 = Instant::now();
-                    let _ = &molecules;
-                    let mut indexed_molecules = (0..num_molecules)
-                        .map(|i| (i, unsafe { molecules.0.add(i) }))
-                        .filter(|&(_i, m)| unsafe {
-                                grid_x_range.contains(&(*m).pos.x)
-                                && grid_y_range.contains(&(*m).pos.y)
-                        })
-                        .map(|(i, m)| unsafe {
-                            IndexedMolecule { index: i, pos: (*m).pos }
-                        })
-                        .collect::<Vec<_>>();
-                    let index_set = indexed_molecules.iter().map(|m| m.index).collect::<Vec<_>>();
-                    barrier_clone.wait();
-                    // This operation may not look safe, but since before the sync statement,
-                    // every thread saves a different set of indices to check collision.
-                    // In other words, let M be the set of molecules, then thread i is selecting
-                    // a subset of indices M_i, such that union of all M_i is M and intersection
-                    // of any M_i with M_j is null.
-                    // Therefore, no data race will happen, even if the M_i is different for each
-                    // frame.
-                    let kd_tree = kd_tree::Node::new(&mut indexed_molecules, kd_tree_max_elem, kd_tree::KDNodeDivideBy::X);
-                    // process collisions between molecules within the grid
-                    for i in &index_set {
-                        let i = *i;
-                        let mol1 = unsafe { molecules.0.add(i).as_mut() };
-                        if let Some(mol1) = mol1 {
-                            let radius1 = mol1.mol_type.radius();
-                            let neighbors = kd_tree.query_circle(mol1.pos, radius1 + T::MAX_RADIUS).unwrap_or(Vec::new());
-                            for mol2 in neighbors {
-                                let j = mol2.index;
-                                let mol2 = unsafe { molecules.0.add(j).as_mut() };
-                                if let Some(mol2) = mol2 {
-                                    let radius2 = mol2.mol_type.radius();
-                                    if i < j && Vec2::length_sq(mol1.pos - mol2.pos) < (radius1 + radius2) * (radius1 + radius2) {
-                                        utils::collision_2_molecules(mol1, mol2);
+            let threads = (0..THREAD_WIDTH * THREAD_HEIGHT)
+                .map(|thread_idx| {
+                    {
+                        let molecules = MoleculeMutPtr(self.molecules.as_mut_ptr());
+                        let barrier_clone = barrier.clone();
+                        let grid_i = thread_idx % THREAD_WIDTH;
+                        let grid_j = thread_idx / THREAD_WIDTH;
+                        let grid_x_range = (grid_i as f32 * self.unit_width)
+                            ..((grid_i + 1) as f32 * self.unit_width);
+                        let grid_y_range = (grid_j as f32 * self.unit_height)
+                            ..((grid_j + 1) as f32 * self.unit_height);
+                        let left_bound_mols = horizontal_bound_mols[grid_i][grid_j].clone();
+                        let right_bound_mols = horizontal_bound_mols[grid_i + 1][grid_j].clone();
+                        let up_bound_mols = vertical_bound_mols[grid_i][grid_j].clone();
+                        let down_bound_mols = vertical_bound_mols[grid_i][grid_j + 1].clone();
+                        s.spawn(move || {
+                            let c1 = Instant::now();
+                            let _ = &molecules;
+                            let mut indexed_molecules = (0..num_molecules)
+                                .map(|i| (i, unsafe { molecules.0.add(i) }))
+                                .filter(|&(_i, m)| unsafe {
+                                    grid_x_range.contains(&(*m).pos.x)
+                                        && grid_y_range.contains(&(*m).pos.y)
+                                })
+                                .map(|(i, m)| unsafe {
+                                    IndexedMolecule {
+                                        index: i,
+                                        pos: (*m).pos,
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+                            let index_set = indexed_molecules
+                                .iter()
+                                .map(|m| m.index)
+                                .collect::<Vec<_>>();
+                            barrier_clone.wait();
+                            // This operation may not look safe, but since before the sync statement,
+                            // every thread saves a different set of indices to check collision.
+                            // In other words, let M be the set of molecules, then thread i is selecting
+                            // a subset of indices M_i, such that union of all M_i is M and intersection
+                            // of any M_i with M_j is null.
+                            // Therefore, no data race will happen, even if the M_i is different for each
+                            // frame.
+                            let kd_tree = kd_tree::Node::new(
+                                &mut indexed_molecules,
+                                kd_tree_max_elem,
+                                kd_tree::KDNodeDivideBy::X,
+                            );
+                            // process collisions between molecules within the grid
+                            for i in &index_set {
+                                let i = *i;
+                                let mol1 = unsafe { molecules.0.add(i).as_mut() };
+                                if let Some(mol1) = mol1 {
+                                    let radius1 = mol1.mol_type.radius();
+                                    let neighbors = kd_tree
+                                        .query_circle(mol1.pos, radius1 + T::MAX_RADIUS)
+                                        .unwrap_or(Vec::new());
+                                    for mol2 in neighbors {
+                                        let j = mol2.index;
+                                        let mol2 = unsafe { molecules.0.add(j).as_mut() };
+                                        if let Some(mol2) = mol2 {
+                                            let radius2 = mol2.mol_type.radius();
+                                            if i < j
+                                                && Vec2::length_sq(mol1.pos - mol2.pos)
+                                                    < (radius1 + radius2) * (radius1 + radius2)
+                                            {
+                                                utils::collision_2_molecules(mol1, mol2);
+                                            }
+                                        } else {
+                                            continue;
+                                        }
                                     }
                                 } else {
                                     continue;
                                 }
                             }
-                        } else {
-                            continue;
-                        }
-                    }
-                    // process collisions with the grid boundary
-                    // add the molecules that are on the boundaries to `horizontal_bound_mols` and `vertical_bound_mols`
-                    for i in &index_set {
-                        let i = *i;
-                        let m = unsafe { *molecules.0.add(i) };
-                        let radius = m.mol_type.radius();
-                        // TODO: mutex lock is time inefficient
-                        if m.pos.x - radius < grid_x_range.start {
-                            left_bound_mols.lock().unwrap().insert(SetKey(i, NotNan::new(m.pos.y).unwrap()));
-                        }
-                        if m.pos.x + radius > grid_x_range.end {
-                            right_bound_mols.lock().unwrap().insert(SetKey(i, NotNan::new(m.pos.y).unwrap()));
-                        }
-                        if m.pos.y - radius < grid_y_range.start {
-                            up_bound_mols.lock().unwrap().insert(SetKey(i, NotNan::new(m.pos.x).unwrap()));
-                        }
-                        if m.pos.y + radius > grid_y_range.end {
-                            down_bound_mols.lock().unwrap().insert(SetKey(i, NotNan::new(m.pos.x).unwrap()));
-                        }
-                    }
-                    barrier_clone.wait();
+                            // process collisions with the grid boundary
+                            // add the molecules that are on the boundaries to `horizontal_bound_mols` and `vertical_bound_mols`
+                            for i in &index_set {
+                                let i = *i;
+                                let m = unsafe { *molecules.0.add(i) };
+                                let radius = m.mol_type.radius();
+                                // TODO: mutex lock is time inefficient
+                                if m.pos.x - radius < grid_x_range.start {
+                                    left_bound_mols
+                                        .lock()
+                                        .unwrap()
+                                        .insert(SetKey(i, NotNan::new(m.pos.y).unwrap()));
+                                }
+                                if m.pos.x + radius > grid_x_range.end {
+                                    right_bound_mols
+                                        .lock()
+                                        .unwrap()
+                                        .insert(SetKey(i, NotNan::new(m.pos.y).unwrap()));
+                                }
+                                if m.pos.y - radius < grid_y_range.start {
+                                    up_bound_mols
+                                        .lock()
+                                        .unwrap()
+                                        .insert(SetKey(i, NotNan::new(m.pos.x).unwrap()));
+                                }
+                                if m.pos.y + radius > grid_y_range.end {
+                                    down_bound_mols
+                                        .lock()
+                                        .unwrap()
+                                        .insert(SetKey(i, NotNan::new(m.pos.x).unwrap()));
+                                }
+                            }
+                            barrier_clone.wait();
 
-                    // each thread picks a boundary and process collision
-                    if grid_i >= 1 {
-                        // process collisions on horizontal boundaries
-                        let bound_mols = left_bound_mols.lock().unwrap();
-                        for key1 in bound_mols.iter() {
-                            let i = key1.0;
-                            let mol1 = unsafe { molecules.0.add(i).as_mut().unwrap() };
-                            let radius1 = mol1.mol_type.radius();
-                            let up_bound = NotNan::new(mol1.pos.y - T::MAX_RADIUS).unwrap();
-                            let down_bound = NotNan::new(mol1.pos.y + T::MAX_RADIUS).unwrap();
-                            for key2 in bound_mols.range(SetKey(i, up_bound)..SetKey(i, down_bound)) {
-                                let j = key2.0;
-                                let mol2 = unsafe { molecules.0.add(j).as_mut().unwrap() };
-                                let radius2 = mol2.mol_type.radius();
-                                if i < j && Vec2::length_sq(mol1.pos - mol2.pos) <= (radius1 + radius2) * (radius1 + radius2) {
-                                    utils::collision_2_molecules(mol1, mol2);
+                            // each thread picks a boundary and process collision
+                            if grid_i >= 1 {
+                                // process collisions on horizontal boundaries
+                                let bound_mols = left_bound_mols.lock().unwrap();
+                                for key1 in bound_mols.iter() {
+                                    let i = key1.0;
+                                    let mol1 = unsafe { molecules.0.add(i).as_mut().unwrap() };
+                                    let radius1 = mol1.mol_type.radius();
+                                    let up_bound = NotNan::new(mol1.pos.y - T::MAX_RADIUS).unwrap();
+                                    let down_bound =
+                                        NotNan::new(mol1.pos.y + T::MAX_RADIUS).unwrap();
+                                    for key2 in
+                                        bound_mols.range(SetKey(i, up_bound)..SetKey(i, down_bound))
+                                    {
+                                        let j = key2.0;
+                                        let mol2 = unsafe { molecules.0.add(j).as_mut().unwrap() };
+                                        let radius2 = mol2.mol_type.radius();
+                                        if i < j
+                                            && Vec2::length_sq(mol1.pos - mol2.pos)
+                                                <= (radius1 + radius2) * (radius1 + radius2)
+                                        {
+                                            utils::collision_2_molecules(mol1, mol2);
+                                        }
+                                    }
                                 }
                             }
-                        }
-                    }
-                    if grid_j >= 1 {
-                        // process collisions on vertical boundaries
-                        let bound_mols = up_bound_mols.lock().unwrap();
-                        for key1 in bound_mols.iter() {
-                            let i = key1.0;
-                            let mol1 = unsafe { molecules.0.add(i).as_mut().unwrap() };
-                            let radius1 = mol1.mol_type.radius();
-                            let left_bound = NotNan::new(mol1.pos.x - T::MAX_RADIUS).unwrap();
-                            let right_bound = NotNan::new(mol1.pos.x + T::MAX_RADIUS).unwrap();
-                            for key2 in bound_mols.range(SetKey(i, left_bound)..SetKey(i, right_bound)) {
-                                let j = key2.0;
-                                let mol2 = unsafe { molecules.0.add(j).as_mut().unwrap() };
-                                let radius2 = mol2.mol_type.radius();
-                                if i < j && Vec2::length_sq(mol1.pos - mol2.pos) <= (radius1 + radius2) * (radius1 + radius2) {
-                                    utils::collision_2_molecules(mol1, mol2);
+                            if grid_j >= 1 {
+                                // process collisions on vertical boundaries
+                                let bound_mols = up_bound_mols.lock().unwrap();
+                                for key1 in bound_mols.iter() {
+                                    let i = key1.0;
+                                    let mol1 = unsafe { molecules.0.add(i).as_mut().unwrap() };
+                                    let radius1 = mol1.mol_type.radius();
+                                    let left_bound =
+                                        NotNan::new(mol1.pos.x - T::MAX_RADIUS).unwrap();
+                                    let right_bound =
+                                        NotNan::new(mol1.pos.x + T::MAX_RADIUS).unwrap();
+                                    for key2 in bound_mols
+                                        .range(SetKey(i, left_bound)..SetKey(i, right_bound))
+                                    {
+                                        let j = key2.0;
+                                        let mol2 = unsafe { molecules.0.add(j).as_mut().unwrap() };
+                                        let radius2 = mol2.mol_type.radius();
+                                        if i < j
+                                            && Vec2::length_sq(mol1.pos - mol2.pos)
+                                                <= (radius1 + radius2) * (radius1 + radius2)
+                                        {
+                                            utils::collision_2_molecules(mol1, mol2);
+                                        }
+                                    }
                                 }
                             }
-                        }
+                            let c2 = Instant::now();
+                            log::trace!(
+                                "Thread {} finished in {} microseconds",
+                                thread_idx,
+                                (c2 - c1).as_micros()
+                            );
+                        })
                     }
-                    let c2 = Instant::now();
-                    log::trace!("Thread {} finished in {} microseconds", thread_idx, (c2 - c1).as_micros());
                 })
-            }}).collect::<Vec<_>>();
+                .collect::<Vec<_>>();
             threads.into_iter().for_each(|t| t.join().unwrap());
             log::trace!("All threads finished");
 
@@ -300,16 +349,25 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
     }
 
     /// Get the pressure of the gas
-    /// 
+    ///
     /// If the pressure on the four walls differs by more than 5%, then return None.
     pub fn average_pressure(&self) -> Option<f32> {
-        let pressure_entry = self.pressures.iter().fold(PressureEntry::default(), |acc, p| acc + *p) / (self.pressures.len() as f32);
-        let pressure = (pressure_entry.x_neg + pressure_entry.x_pos + pressure_entry.y_neg + pressure_entry.y_pos) / 4.0;
+        let pressure_entry = self
+            .pressures
+            .iter()
+            .fold(PressureEntry::default(), |acc, p| acc + *p)
+            / (self.pressures.len() as f32);
+        let pressure = (pressure_entry.x_neg
+            + pressure_entry.x_pos
+            + pressure_entry.y_neg
+            + pressure_entry.y_pos)
+            / 4.0;
         let threshold = pressure * 0.05;
         if (pressure_entry.x_neg - pressure).abs() > threshold
             || (pressure_entry.x_pos - pressure).abs() > threshold
             || (pressure_entry.y_neg - pressure).abs() > threshold
-            || (pressure_entry.y_pos - pressure).abs() > threshold {
+            || (pressure_entry.y_pos - pressure).abs() > threshold
+        {
             None
         } else {
             Some(pressure)
@@ -317,7 +375,10 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
     }
 
     pub fn pressure(&self) -> PressureEntry {
-        self.pressures.iter().fold(PressureEntry::default(), |acc, p| acc + *p) / (self.pressures.len() as f32)
+        self.pressures
+            .iter()
+            .fold(PressureEntry::default(), |acc, p| acc + *p)
+            / (self.pressures.len() as f32)
     }
 }
 
@@ -326,21 +387,26 @@ impl<T: MoleculeType + Default + Send + Sync, const N: usize> Model3<T, N> {
         let default = T::default();
         let radius = default.radius();
         let mut rng = rand::thread_rng();
-        let molecules = (0..num_molecule).map(|_| {
-            Molecule {
-                pos: Vec2::new(rng.gen_range(radius..(width - radius)), rng.gen_range(radius..(height - radius))),
+        let molecules = (0..num_molecule)
+            .map(|_| Molecule {
+                pos: Vec2::new(
+                    rng.gen_range(radius..(width - radius)),
+                    rng.gen_range(radius..(height - radius)),
+                ),
                 vel: utils::sample_rand_velocity(&mut rng, 0.64),
                 mol_type: default,
-            }
-        }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
         // precompiute the total collision volume of all molecules
-        let molecule_volume = molecules.iter()
-            .fold(0.0, |acc, m| {
-                let radius = m.mol_type.radius();
-                acc + f32::consts::PI * radius * radius
-            });
+        let molecule_volume = molecules.iter().fold(0.0, |acc, m| {
+            let radius = m.mol_type.radius();
+            acc + f32::consts::PI * radius * radius
+        });
         Self {
-            molecules, width, height, kd_tree_max_elem,
+            molecules,
+            width,
+            height,
+            kd_tree_max_elem,
             unit_width: width / THREAD_WIDTH as f32,
             unit_height: height / THREAD_HEIGHT as f32,
             pressures: ConstGenericRingBuffer::new(),
@@ -353,15 +419,22 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model for Model3<T, N> {
     type Type = T;
     type AdvanceReturnType = ();
 
-    fn construct(width: f32, height: f32, num_molecule: usize, constructor: impl FnMut(usize) ->  Molecule<Self::Type>) -> Self {
+    fn construct(
+        width: f32,
+        height: f32,
+        num_molecule: usize,
+        constructor: impl FnMut(usize) -> Molecule<Self::Type>,
+    ) -> Self {
         let molecules = (0..num_molecule).map(constructor).collect::<Vec<_>>();
-        let molecule_volume = molecules.iter()
-            .fold(0.0, |acc, m| {
-                let radius = m.mol_type.radius();
-                acc + f32::consts::PI * radius * radius
-            });
+        let molecule_volume = molecules.iter().fold(0.0, |acc, m| {
+            let radius = m.mol_type.radius();
+            acc + f32::consts::PI * radius * radius
+        });
         Self {
-            molecules, width, height, kd_tree_max_elem: 10,
+            molecules,
+            width,
+            height,
+            kd_tree_max_elem: 10,
             unit_width: width / THREAD_WIDTH as f32,
             unit_height: height / THREAD_HEIGHT as f32,
             pressures: ConstGenericRingBuffer::new(),

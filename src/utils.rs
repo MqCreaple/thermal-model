@@ -26,28 +26,33 @@ pub fn collision_2_molecules<T: MoleculeType>(mol1: &mut Molecule<T>, mol2: &mut
     // update the two molecules' positions and velocities
     mol1.vel = v1_final;
     mol2.vel = v2_final;
-    let update_dist = (mol1.mol_type.radius() + mol2.mol_type.radius() - Vec2::length(mol1.pos - mol2.pos)) / 2.0;
+    let update_dist =
+        (mol1.mol_type.radius() + mol2.mol_type.radius() - Vec2::length(mol1.pos - mol2.pos)) / 2.0;
     mol1.pos -= normal * update_dist;
     mol2.pos += normal * update_dist;
 }
 
 /// Linear interpolation between two variables.
-/// 
+///
 /// When `r` is 0, the output will equal to `f1`. When `r` is 1, the output will equal to `f2`.
-/// 
+///
 /// And when `r` is in between, the output linearly varies from `f1` to `f2` as `r` increases.
-/// 
+///
 /// The type of `f1` and `f2` can be any type that implements all [Add], [Sub], and [Mul<f32>].
-/// 
+///
 /// # Examples
-/// 
+///
 /// ```
 /// use thermal_model::linear_interp;
 /// assert_eq!(linear_interp(1.0, 2.0, 0.5), 1.5);
 /// assert_eq!(linear_interp(1.0, 2.0, 0.1), 1.1);
 /// assert_eq!(linear_interp(1.0, 2.0, 0.9), 1.9);
 /// ```
-pub fn linear_interp<F: Add<Output=F> + Sub<Output=F> + Mul<f32, Output=F> + Clone>(f1: F, f2: F, r: f32) -> F {
+pub fn linear_interp<F: Add<Output = F> + Sub<Output = F> + Mul<f32, Output = F> + Clone>(
+    f1: F,
+    f2: F,
+    r: f32,
+) -> F {
     f1.clone() + (f2 - f1) * r
 }
 

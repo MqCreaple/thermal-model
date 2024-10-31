@@ -3,12 +3,15 @@ use std::time::Instant;
 use eframe::egui::Vec2;
 use rand::Rng;
 
-use crate::{model::{Model, Molecule, MoleculeType}, utils};
+use crate::{
+    model::{Model, Molecule, MoleculeType},
+    utils,
+};
 
 pub mod kd_tree;
 
 /// Naive implementation of gas model
-/// 
+///
 /// Use O(N^2) algorithm to check and process every collision within every frame.
 pub struct Model2<T: MoleculeType> {
     molecules: Vec<Molecule<T>>,
@@ -35,39 +38,56 @@ impl<T: MoleculeType + Default> Model2<T> {
         let default = T::default();
         let radius = default.radius();
         let mut rng = rand::thread_rng();
-        let molecules = (0..num_molecule).map(|_| {
-            Molecule {
-                pos: Vec2::new(rng.gen_range(radius..(width - radius)), rng.gen_range(radius..(height - radius))),
+        let molecules = (0..num_molecule)
+            .map(|_| Molecule {
+                pos: Vec2::new(
+                    rng.gen_range(radius..(width - radius)),
+                    rng.gen_range(radius..(height - radius)),
+                ),
                 vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
                 mol_type: default,
-            }
-        }).collect();
+            })
+            .collect();
         Self {
-            molecules, width, height, kd_tree_max_elem,
+            molecules,
+            width,
+            height,
+            kd_tree_max_elem,
         }
     }
 }
 
 impl<T: MoleculeType> Model2<T> {
     /// Handle collision between molecules.
-    /// 
+    ///
     /// Returns the total number of collisions occured, including both molecule-molecule and molecule-wall collisions.
     fn handle_collision(&mut self) -> usize {
         let mut total_collisions = 0;
         // build a KD tree of all molecules
-        let mut indexed_molecule = self.molecules.iter()
+        let mut indexed_molecule = self
+            .molecules
+            .iter()
             .enumerate()
-            .map(|(i, m)| IndexedMolecule { index: i, pos: m.pos })
+            .map(|(i, m)| IndexedMolecule {
+                index: i,
+                pos: m.pos,
+            })
             .collect::<Vec<_>>();
         // let c1 = Instant::now();
-        let kd_tree = kd_tree::Node::new(&mut indexed_molecule, self.kd_tree_max_elem, kd_tree::KDNodeDivideBy::X);
+        let kd_tree = kd_tree::Node::new(
+            &mut indexed_molecule,
+            self.kd_tree_max_elem,
+            kd_tree::KDNodeDivideBy::X,
+        );
         // let c2 = Instant::now();
         // handle collisions between molecules
         let num_molecules = self.molecules.len();
         for i in 0..num_molecules {
             let mol1 = self.molecules[i];
             let radius1 = mol1.mol_type.radius();
-            let neighbors = kd_tree.query_circle(mol1.pos, radius1 + T::MAX_RADIUS).unwrap_or(Vec::new());
+            let neighbors = kd_tree
+                .query_circle(mol1.pos, radius1 + T::MAX_RADIUS)
+                .unwrap_or(Vec::new());
             for indexed_mol2 in neighbors {
                 let j = indexed_mol2.index;
                 let mol2 = &self.molecules[indexed_mol2.index];
@@ -131,10 +151,18 @@ impl<T: MoleculeType> Model for Model2<T> {
     type Type = T;
     type AdvanceReturnType = usize;
 
-    fn construct(width: f32, height: f32, num_molecule: usize, constructor: impl FnMut(usize) ->  Molecule<Self::Type>) -> Self {
+    fn construct(
+        width: f32,
+        height: f32,
+        num_molecule: usize,
+        constructor: impl FnMut(usize) -> Molecule<Self::Type>,
+    ) -> Self {
         let molecules = (0..num_molecule).map(constructor).collect();
         Self {
-            molecules, width, height, kd_tree_max_elem: 10,
+            molecules,
+            width,
+            height,
+            kd_tree_max_elem: 10,
         }
     }
 
