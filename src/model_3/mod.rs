@@ -342,7 +342,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
         self.width * self.height - self.molecule_volume
     }
 
-    pub fn total_energy(&self) -> f32 {
+    pub fn translational_ke(&self) -> f32 {
         self.molecules.iter().fold(0.0, |acc, m| {
             acc + 0.5 * m.mol_type.mass() * m.vel.length_sq()
         })
@@ -394,6 +394,7 @@ impl<T: MoleculeType + Default + Send + Sync, const N: usize> Model3<T, N> {
                     rng.gen_range(radius..(height - radius)),
                 ),
                 vel: utils::sample_rand_velocity(&mut rng, 0.64),
+                orient: None,
                 mol_type: default,
             })
             .collect::<Vec<_>>();
@@ -458,7 +459,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model for Model3<T, N> {
         for _ in 0..4 {
             // move all molecules along their speeds
             for m in self.molecules.iter_mut() {
-                m.pos += m.vel * dt * 0.25;
+                m.advance_pos_angle(dt * 0.25);
             }
             // handle collisions
             let pressure = self.handle_collision(dt * 0.25);

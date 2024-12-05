@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         plot_quantities: vec![(|m| m.vel.length(), "velocity magnitude")],
         state_quantities: vec![
             (
-                |model| Some(model.total_energy()),
+                |model| Some(model.translational_ke()),
                 "internal energy (U=nkT)",
             ),
             (|model| model.average_pressure(), "average pressure"),
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 |model| {
                     model
                         .average_pressure()
-                        .map(|p| p * model.volume() / model.total_energy())
+                        .map(|p| p * model.volume() / model.translational_ke())
                 },
                 "pV / nkT",
             ),

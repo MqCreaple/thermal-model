@@ -45,6 +45,7 @@ impl<T: MoleculeType + Default> Model2<T> {
                     rng.gen_range(radius..(height - radius)),
                 ),
                 vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
+                orient: None,
                 mol_type: default,
             })
             .collect();
@@ -182,7 +183,7 @@ impl<T: MoleculeType> Model for Model2<T> {
         for _ in 0..4 {
             // move all molecules along their speeds
             for m in self.molecules.iter_mut() {
-                m.pos += m.vel * dt * 0.25;
+                m.advance_pos_angle(dt * 0.25);
             }
             // handle collisions
             self.handle_collision();

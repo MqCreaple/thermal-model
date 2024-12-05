@@ -43,6 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     rng.gen_range(0.0..HEIGHT),
                 ),
                 vel: sample_rand_velocity(&mut rng, 0.64),
+                orient: None,
                 mol_type: MoleculeTypes::Red,
             }
         } else {
@@ -52,6 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     rng.gen_range(0.0..HEIGHT),
                 ),
                 vel: sample_rand_velocity(&mut rng, 0.64),
+                orient: None,
                 mol_type: MoleculeTypes::Green,
             }
         }
@@ -63,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (|m| m.vel.x, "velocity x"),
             (|m| m.vel.y, "velocity y"),
         ],
-        state_quantities: vec![(|model| Some(model.total_energy()), "total energy")],
+        state_quantities: vec![(|model| Some(model.translational_ke()), "total energy")],
         plot_options: PlotOptions::All,
         molecule_color: |m| match m.mol_type {
             MoleculeTypes::Red => RED_COLOR,

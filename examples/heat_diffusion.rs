@@ -45,6 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     rng.gen_range(0.0..HEIGHT),
                 ),
                 vel: sample_rand_velocity(&mut rng, 1.0),
+                orient: None,
                 mol_type: MoleculeTypes,
             }
         } else {
@@ -54,6 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     rng.gen_range(0.0..HEIGHT),
                 ),
                 vel: sample_rand_velocity(&mut rng, 0.4),
+                orient: None,
                 mol_type: MoleculeTypes,
             }
         }
@@ -62,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let visualizer_options = VisualizerOptions::<Model3<MoleculeTypes, 1>, Vec2> {
         plot_quantities: vec![(|m| m.vel.length(), "velocity magnitude")],
         state_quantities: vec![
-            (|model| Some(model.total_energy()), "total energy"),
+            (|model| Some(model.translational_ke()), "total energy"),
             (
                 |model| {
                     let left = model.get_molecules().filter(|m| m.pos.x <= WIDTH / 2.0);

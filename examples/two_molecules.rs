@@ -37,6 +37,8 @@ const NUM_MOLS: usize = 20000;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use std::f32::consts::PI;
+
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .init();
@@ -50,12 +52,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 pos: Vec2::new(rng.gen_range(0.0..WIDTH), rng.gen_range(0.0..HEIGHT)),
                 vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
                 mol_type: MoleculeTypes::O2,
+                orient: Some((rng.gen_range(0.0..2.0 * PI), rng.gen_range(-1.0..1.0))),
             }
         } else {
             Molecule {
                 pos: Vec2::new(rng.gen_range(0.0..WIDTH), rng.gen_range(0.0..HEIGHT)),
                 vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
                 mol_type: MoleculeTypes::CO2,
+                orient: Some((rng.gen_range(0.0..2.0 * PI), rng.gen_range(-1.0..1.0))),
             }
         }
     });
@@ -67,20 +71,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     MoleculeTypes::O2 => 0.5 * m.mol_type.mass() * m.vel.length_sq(),
                     MoleculeTypes::CO2 => f32::NAN,
                 },
-                "O2 kinetic energy",
+                "O2 translational kinetic energy",
             ),
             (
                 |m| match m.mol_type {
                     MoleculeTypes::CO2 => 0.5 * m.mol_type.mass() * m.vel.length_sq(),
                     MoleculeTypes::O2 => f32::NAN,
                 },
-                "CO2 kinetic energy",
+                "CO2 translational kinetic energy",
             ),
         ],
         state_quantities: vec![
             (
-                |model| Some(model.total_energy() / model.num_molecule() as f32),
-                "average kinetic energy",
+                |model| Some(model.translational_ke() / model.num_molecule() as f32),
+                "average translational kinetic energy",
             ),
             (
                 |model| {
@@ -97,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .count() as f32,
                     )
                 },
-                "average energy of O2",
+                "average translational kinetic energy of O2",
             ),
             (
                 |model| {
@@ -114,10 +118,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 .count() as f32,
                     )
                 },
-                "average energy of CO2",
+                "average translational kinetic energy of CO2",
             ),
         ],
-        plot_options: PlotOptions::Grid(50, 50),
+        plot_options: PlotOptions::All,
         molecule_color: |m| match m.mol_type {
             MoleculeTypes::CO2 => CO2_COLOR,
             MoleculeTypes::O2 => O2_COLOR,

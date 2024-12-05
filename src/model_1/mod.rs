@@ -26,6 +26,7 @@ impl<T: MoleculeType + Default> Model1<T> {
                     rng.gen_range(radius..(height - radius)),
                 ),
                 vel: Vec2::new(rng.gen_range(-1.0..1.0), rng.gen_range(-1.0..1.0)),
+                orient: None,
                 mol_type,
             })
             .collect();
@@ -119,7 +120,7 @@ impl<T: MoleculeType> Model for Model1<T> {
     fn advance(&mut self, dt: f32) -> usize {
         // move all molecules along their speeds
         for m in self.molecules.iter_mut() {
-            m.pos += m.vel * dt;
+            m.advance_pos_angle(dt);
         }
         // handle collisions multiple times
         for _ in 0..4 {

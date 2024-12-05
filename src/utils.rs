@@ -6,28 +6,65 @@ use rand_distr::{Distribution, Normal};
 
 use crate::model::{Molecule, MoleculeType};
 
-/// Calculate the final velocities of two objects after an elastic collision.
-pub fn velocity_change(m1: f32, m2: f32, v1: f32, v2: f32) -> (f32, f32) {
-    let v1_change = 2.0 * m2 * (v2 - v1) / (m1 + m2);
-    let v2_change = 2.0 * m1 * (v1 - v2) / (m1 + m2);
-    (v1_change, v2_change)
+/// The impulse acted on the first molecule during the collision
+///
+/// The impulse on the second molecule is the negative of this value.
+#[inline]
+pub fn normal_impulse(m1: f32, m2: f32, v1: f32, v2: f32) -> f32 {
+    2.0 * m1 * m2 * (v2 - v1) / (m1 + m2)
+}
+
+const TANGENTIAL_IMPULSE_CONSTANT: f32 = 0.2;
+
+pub fn tangential_impulse(m1: f32, m2: f32, v1: f32, v2: f32, w1: f32, w2: f32) -> f32 {
+    // assume that the impulse on tangential direction is proportional to the difference in angular
+    // velocity
+    -TANGENTIAL_IMPULSE_CONSTANT * (w1 + w2) // since the two molecules spins at opposite direction at the contact point
 }
 
 pub fn collision_2_molecules<T: MoleculeType>(mol1: &mut Molecule<T>, mol2: &mut Molecule<T>) {
+    // letters
+    // m1, m2: mass
+    // v1, v2: velocity
+    // r1, r2: radius
+    // w1, w2: angular velocity
+    // d_v1, d_v2: velocity change
+    // d_v1_n, d_v2_n: velocity change on normal direction
+    // d_v1_t, d_v2_t: velocity change on tangential direction
+
     // calculate velocities after collision
     let normal = (mol2.pos - mol1.pos).normalized();
     let m1 = mol1.mol_type.mass();
     let m2 = mol2.mol_type.mass();
     let v1 = mol1.vel.dot(normal);
     let v2 = mol2.vel.dot(normal);
-    let (v1_change, v2_change) = velocity_change(m1, m2, v1, v2);
-    let v1_final = v1_change * normal + mol1.vel;
-    let v2_final = v2_change * normal + mol2.vel;
-    // update the two molecules' positions and velocities
-    mol1.vel = v1_final;
-    mol2.vel = v2_final;
-    let update_dist =
-        (mol1.mol_type.radius() + mol2.mol_type.radius() - Vec2::length(mol1.pos - mol2.pos)) / 2.0;
+    let r1 = mol1.mol_type.radius();
+    let r2 = mol2.mol_type.radius();
+    let impulse_n = normal_impulse(m1, m2, v1, v2);
+    let mut d_v1 = impulse_n / m1 * normal;
+    let mut d_v2 = -impulse_n / m2 * normal;
+
+    match &mut (mol1.orient, mol2.orient) {
+        (Some((_, w1)), Some((_, w2))) => {
+            // calculate change in velocity on tangential direction
+            let tangential = -normal.rot90();
+            let impulse_t = tangential_impulse(m1, m2, v1, v2, *w1, *w2);
+            d_v1 += impulse_t / m1 * tangential;
+            d_v2 -= impulse_t / m2 * tangential;
+
+            // change angular velocity
+            *w1 += r1 * impulse_t / mol1.mol_type.inertia();
+            *w2 -= r2 * impulse_t / mol2.mol_type.inertia();
+        }
+        _ => {}
+    }
+
+    // update the two molecules' velocities
+    mol1.vel += d_v1;
+    mol2.vel += d_v2;
+
+    // update the two molecules' positions to avoid overlap
+    let update_dist = (r1 + r2 - Vec2::length(mol1.pos - mol2.pos)) / 2.0;
     mol1.pos -= normal * update_dist;
     mol2.pos += normal * update_dist;
 }
@@ -80,8 +117,8 @@ mod tests {
 
     #[test]
     fn test_collision() {
-        assert_eq!(velocity_change(1.0, 1.0, 1.0, 0.0), (-1.0, 1.0));
-        assert_eq!(velocity_change(1.0, 1.0, 1.0, -1.0), (-2.0, 2.0));
+        assert_eq!(normal_impulse(1.0, 1.0, 1.0, 0.0), -1.0);
+        assert_eq!(normal_impulse(1.0, 1.0, 1.0, -1.0), -2.0);
     }
 
     #[test]

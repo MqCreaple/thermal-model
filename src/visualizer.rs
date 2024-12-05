@@ -173,6 +173,15 @@ where
                                 (self.options.molecule_color)(&m),
                                 egui::Stroke::default(),
                             );
+                            // if the molecule has orientation, mark a small line to represent the orientation
+                            if let Some((angle, _)) = m.orient {
+                                let dir = Vec2::angled(angle);
+                                let dir = dir * radius;
+                                painter.line_segment(
+                                    [pos, pos + dir],
+                                    Stroke::new(1.0, Color32::BLACK),
+                                );
+                            }
                         });
                         // paint the boundary
                         painter.rect(
