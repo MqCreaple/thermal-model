@@ -31,9 +31,9 @@ impl MoleculeType for MoleculeTypes {
     }
 }
 
-const WIDTH: f32 = 200.0;
-const HEIGHT: f32 = 200.0;
-const NUM_MOLS: usize = 20000;
+const WIDTH: f32 = 400.0;
+const HEIGHT: f32 = 400.0;
+const NUM_MOLS: usize = 80000;
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -93,7 +93,7 @@ impl<'a, E: PositionKey + Clone> Node<'a, E> {
             let (left, mid, right) = elems.select_nth_unstable_by_key(len / 2, |elem| {
                 NotNan::new(elem.get_position().x).unwrap()
             });
-            let div = (left[left.len() - 1].get_position().x + mid.get_position().x) / 2.0;
+            let div = (left.last().unwrap().get_position().x + mid.get_position().x) / 2.0;
             Self {
                 x_bound,
                 y_bound,
@@ -115,7 +115,7 @@ impl<'a, E: PositionKey + Clone> Node<'a, E> {
             let (up, mid, down) = elems.select_nth_unstable_by_key(len / 2, |elem| {
                 NotNan::new(elem.get_position().y).unwrap()
             });
-            let div = (up[up.len() - 1].get_position().y + mid.get_position().y) / 2.0;
+            let div = (up.last().unwrap().get_position().y + mid.get_position().y) / 2.0;
             Self {
                 x_bound,
                 y_bound,
@@ -147,7 +147,7 @@ impl<'a, E: PositionKey + Clone> Node<'a, E> {
                 elems
                     .iter()
                     .filter_map(|elem| {
-                        if Vec2::length(elem.get_position() - center) <= radius {
+                        if Vec2::length_sq(elem.get_position() - center) <= radius * radius {
                             Some(elem)
                         } else {
                             None
@@ -156,12 +156,20 @@ impl<'a, E: PositionKey + Clone> Node<'a, E> {
                     .collect(),
             ),
             NodeInner::XNode { x_div, left, right } => {
-                let overlap_left = center.x - radius < *x_div;
-                let overlap_right = center.x + radius > *x_div;
+                let overlap_left = center.x - radius <= *x_div;
+                let overlap_right = center.x + radius >= *x_div;
                 if overlap_left && overlap_right {
-                    let mut result = left.query_circle(center, radius)?;
-                    result.extend(right.query_circle(center, radius)?);
-                    Some(result)
+                    let l_result = left.query_circle(center, radius);
+                    let r_result = right.query_circle(center, radius);
+                    match (l_result, r_result) {
+                        (Some(mut l), Some(r)) => {
+                            l.extend(r);
+                            Some(l)
+                        }
+                        (Some(l), None) => Some(l),
+                        (None, Some(r)) => Some(r),
+                        (None, None) => None,
+                    }
                 } else if overlap_left {
                     left.query_circle(center, radius)
                 } else if overlap_right {
@@ -171,12 +179,20 @@ impl<'a, E: PositionKey + Clone> Node<'a, E> {
                 }
             }
             NodeInner::YNode { y_div, up, down } => {
-                let overlap_up = center.y - radius < *y_div;
-                let overlap_down = center.y + radius > *y_div;
+                let overlap_up = center.y - radius <= *y_div;
+                let overlap_down = center.y + radius >= *y_div;
                 if overlap_up && overlap_down {
-                    let mut result = up.query_circle(center, radius)?;
-                    result.extend(down.query_circle(center, radius)?);
-                    Some(result)
+                    let u_result = up.query_circle(center, radius);
+                    let d_result = down.query_circle(center, radius);
+                    match (u_result, d_result) {
+                        (Some(mut u), Some(d)) => {
+                            u.extend(d);
+                            Some(u)
+                        }
+                        (Some(u), None) => Some(u),
+                        (None, Some(d)) => Some(d),
+                        (None, None) => None,
+                    }
                 } else if overlap_up {
                     up.query_circle(center, radius)
                 } else if overlap_down {

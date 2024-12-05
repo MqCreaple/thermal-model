@@ -1,4 +1,4 @@
-use eframe::egui::{Color32, Vec2, ViewportBuilder};
+use eframe::egui::{Color32, ViewportBuilder};
 use model::{Model, MoleculeType};
 use utils::color_interp;
 use visualizer::PlotOptions;
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 (|m| m.vel.x, "velocity x"),
                 (|m| m.vel.y, "velocity y"),
             ],
-            state_quantities: vec![(|model| Some(model.total_energy()), "total energy")],
+            state_quantities: vec![(|model| Some(model.translational_ke()), "total energy")],
             plot_options: PlotOptions::Grid(50, 50),
             molecule_color: |m| {
                 let velocity = m.vel.length();
