@@ -43,6 +43,7 @@ impl<T: MoleculeType> Model1<T> {
     ///
     /// Returns the total number of collisions occured, including both molecule-molecule and molecule-wall collisions.
     fn handle_collision(&mut self) -> usize {
+        let mut rng = rand::thread_rng();
         let mut total_collisions = 0;
         // handle collisions between molecules
         let num_molecules = self.molecules.len();
@@ -54,7 +55,7 @@ impl<T: MoleculeType> Model1<T> {
                 if Vec2::length(mol1.pos - mol2.pos)
                     <= mol1.mol_type.radius() + mol2.mol_type.radius()
                 {
-                    utils::collision_2_molecules(&mut left[i], &mut right[j]);
+                    utils::collision_2_molecules(&mut left[i], &mut right[j], &mut rng);
                     total_collisions += 1;
                 }
             }

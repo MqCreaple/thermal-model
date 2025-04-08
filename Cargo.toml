@@ -2,14 +2,11 @@
 name = "thermal-model"
 version = "0.1.0"
 edition = "2021"
-author = "MqCreaple"
 repository = "https://github.com/MqCreaple/thermal-model"
 
 [dependencies]
 approx = "0.5.1"
-eframe = { version = "0.29.1", features = [
-    "glow"
-] }
+eframe = { version = "0.29.1", features = ["glow"] }
 egui_plot = "0.29.0"
 num = "0.4.3"
 ordered-float = "4.5.0"

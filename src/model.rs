@@ -13,7 +13,8 @@ pub trait MoleculeType: Clone + Copy {
 
     /// The molecule's rotational inertia.
     fn inertia(&self) -> f32 {
-        self.mass() * self.radius() * self.radius() / 2.0
+        let r = self.radius();
+        self.mass() * r * r / 2.0
     }
 }
 
@@ -40,7 +41,7 @@ impl<T: MoleculeType> Molecule<T> {
 
         if let Some((angle, angular_vel)) = &mut self.orient {
             self.pos += self.vel * dt;
-            *angle += *angular_vel * dt;
+            *angle += (*angular_vel) * dt;
             if *angle > 2.0 * PI {
                 *angle -= 2.0 * PI;
             } else if *angle < 0.0 {

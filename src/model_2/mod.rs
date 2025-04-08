@@ -63,6 +63,7 @@ impl<T: MoleculeType> Model2<T> {
     ///
     /// Returns the total number of collisions occured, including both molecule-molecule and molecule-wall collisions.
     fn handle_collision(&mut self) -> usize {
+        let mut rng = rand::thread_rng();
         let mut total_collisions = 0;
         // build a KD tree of all molecules
         let mut indexed_molecule = self
@@ -95,7 +96,7 @@ impl<T: MoleculeType> Model2<T> {
                 if i < j && Vec2::length(mol1.pos - mol2.pos) < radius1 + mol2.mol_type.radius() {
                     let (slice_1, slice_2) = self.molecules.split_at_mut(i.max(j));
                     // handle collision
-                    utils::collision_2_molecules(&mut slice_1[i.min(j)], &mut slice_2[0]);
+                    utils::collision_2_molecules(&mut slice_1[i.min(j)], &mut slice_2[0], &mut rng);
                     total_collisions += 1;
                 }
                 // TODO: bug: when the position of the molecule is updated here, the KD tree is not updated

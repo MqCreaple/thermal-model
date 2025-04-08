@@ -125,6 +125,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                         let down_bound_mols = vertical_bound_mols[grid_i][grid_j + 1].clone();
                         s.spawn(move || {
                             let c1 = Instant::now();
+                            let rng = &mut rand::thread_rng();
                             let _ = &molecules;
                             let mut indexed_molecules = (0..num_molecules)
                                 .map(|i| (i, unsafe { molecules.0.add(i) }))
@@ -174,7 +175,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                                                 && Vec2::length_sq(mol1.pos - mol2.pos)
                                                     < (radius1 + radius2) * (radius1 + radius2)
                                             {
-                                                utils::collision_2_molecules(mol1, mol2);
+                                                utils::collision_2_molecules(mol1, mol2, rng);
                                             }
                                         } else {
                                             continue;
@@ -239,7 +240,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                                             && Vec2::length_sq(mol1.pos - mol2.pos)
                                                 <= (radius1 + radius2) * (radius1 + radius2)
                                         {
-                                            utils::collision_2_molecules(mol1, mol2);
+                                            utils::collision_2_molecules(mol1, mol2, rng);
                                         }
                                     }
                                 }
@@ -265,7 +266,7 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
                                             && Vec2::length_sq(mol1.pos - mol2.pos)
                                                 <= (radius1 + radius2) * (radius1 + radius2)
                                         {
-                                            utils::collision_2_molecules(mol1, mol2);
+                                            utils::collision_2_molecules(mol1, mol2, rng);
                                         }
                                     }
                                 }
@@ -383,7 +384,13 @@ impl<T: MoleculeType + Send + Sync, const N: usize> Model3<T, N> {
 }
 
 impl<T: MoleculeType + Default + Send + Sync, const N: usize> Model3<T, N> {
-    pub fn new(width: f32, height: f32, num_molecule: usize, kd_tree_max_elem: usize) -> Self {
+    pub fn new(
+        width: f32,
+        height: f32,
+        num_molecule: usize,
+        kd_tree_max_elem: usize,
+        oriented: bool,
+    ) -> Self {
         let default = T::default();
         let radius = default.radius();
         let mut rng = rand::thread_rng();
@@ -394,7 +401,14 @@ impl<T: MoleculeType + Default + Send + Sync, const N: usize> Model3<T, N> {
                     rng.gen_range(radius..(height - radius)),
                 ),
                 vel: utils::sample_rand_velocity(&mut rng, 0.64),
-                orient: None,
+                orient: if oriented {
+                    Some((
+                        rng.gen_range(0.0..2.0 * f32::consts::PI),
+                        rng.gen_range(-f32::consts::PI..f32::consts::PI),
+                    ))
+                } else {
+                    None
+                },
                 mol_type: default,
             })
             .collect::<Vec<_>>();

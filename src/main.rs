@@ -37,14 +37,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .init();
-    let model = model_3::Model3::<MoleculeType1, 1000>::new(15.0, 15.0, 200, 10);
+    let model = model_3::Model3::<MoleculeType1, 1000>::new(15.0, 15.0, 200, 10, true);
     // to change the effect of the visualizer, modify the options here
     let visualizer_options =
         visualizer::VisualizerOptions::<model_3::Model3<MoleculeType1, 1000>, f32> {
             plot_quantities: vec![
                 (|m| m.vel.length(), "velocity magnitude"),
-                (|m| m.vel.x, "velocity x"),
-                (|m| m.vel.y, "velocity y"),
+                // (|m| m.vel.x, "velocity x"),
+                // (|m| m.vel.y, "velocity y"),
+                (|m| m.orient.unwrap().1, "angular velocity"),
             ],
             state_quantities: vec![(|model| Some(model.translational_ke()), "total energy")],
             plot_options: PlotOptions::Grid(50, 50),

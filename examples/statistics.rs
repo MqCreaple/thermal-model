@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::builder()
         .filter_level(log::LevelFilter::Info)
         .init();
-    let model = Model3::<MoleculeType1, 10000>::new(300.0, 300.0, 80000, 10);
+    let model = Model3::<MoleculeType1, 10000>::new(300.0, 300.0, 80000, 10, false);
     // to change the effect of the visualizer, modify the options here
     let visualizer_options = VisualizerOptions::<Model3<MoleculeType1, 10000>, f32> {
         plot_quantities: vec![(|m| m.vel.length(), "velocity magnitude")],
